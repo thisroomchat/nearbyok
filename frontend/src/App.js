@@ -9,6 +9,10 @@ import AuthCallback from "@/pages/AuthCallback";
 import Account from "@/pages/Account";
 import ListBusiness from "@/pages/ListBusiness";
 import Admin from "@/pages/Admin";
+import NotFound from "@/pages/NotFound";
+
+// Secret console path (set in frontend/.env). `/admin` deliberately 404s.
+const ADMIN_PATH = (process.env.REACT_APP_ADMIN_PATH || "nbk-console").replace(/^\/+/, "");
 
 function AppRouter() {
   const location = useLocation();
@@ -18,9 +22,11 @@ function AppRouter() {
       <Route path="/" element={<Home />} />
       <Route path="/account" element={<Account />} />
       <Route path="/list-your-business" element={<ListBusiness />} />
-      <Route path="/admin" element={<Admin />} />
+      <Route path={`/${ADMIN_PATH}`} element={<Admin />} />
+      <Route path="/admin" element={<NotFound />} />
       <Route path="/:category/:state/:city" element={<Listing />} />
       <Route path="/:category/:state/:city/:slug" element={<BusinessDetail />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

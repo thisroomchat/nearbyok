@@ -47,3 +47,16 @@ Programmatic SEO local business directory (JustDial/Yelp style) for US cities. B
 ## Changelog
 - Jun 2026: Removed Twilio entirely (env vars, backend tracking_number logic, frontend copy). `/api/leads` now returns `{phone, lead_id}` with the direct Google Places number.
 - Jun 2026 (iteration 2): Admin dashboard (password), Emergent Google login, favorites, user reviews, free listing flow with moderation, Google ingest with photos/reviews/location, +8 categories +20 cities (640 pages), Ingest ALL background job. Tested: 25/25 backend, all frontend flows pass (iteration_2.json).
+
+## Sep 2026 — Phase 1 (continuation)
+- Env recreated (new container): backend/.env (MONGO_URL, DB_NAME, ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_JWT_SECRET, GOOGLE_PLACES_API_KEY), frontend/.env (+REACT_APP_ADMIN_PATH). Credentials in memory/test_credentials.md.
+- Secure admin: `/admin` -> 404; secret console path `/${REACT_APP_ADMIN_PATH}`; username+password -> JWT (12h) via `X-Admin-Token`; 5 fails -> 15 min IP lock; audit log `admin_audit`.
+- Site settings in Mongo `settings` (Cloudinary creds editable from console Settings tab, secret masked). Signed Cloudinary uploads: `GET /api/media/signature`, `POST /api/media/delete`. Frontend `MediaUploader` (phone gallery/camera, progress, videos).
+- Claim flow: `POST /api/businesses/{id}/claim` -> `claims` collection -> console Claims tab approve/reject/revoke -> owner_user_id, claimed, verified. Detail returns `claim{}`; UI: Claim card / pending card / owner Manage card; badge "Verified · Owner managed".
+- Owner editor: `GET/PUT /api/my/listings/{id}` (contact, tagline, description, services, hours incl. per-day, owner_media). images = owner photos first + google_images; videos in gallery + lightbox. Google re-ingest preserves owner edits/media on claimed docs.
+- Reviews accept media[]; free listing uses uploader instead of URLs; PHOTO_LIMIT 10; "Read all N reviews on Google" link.
+- Backend tested 49/49 (iteration 3). Google ingest verified for dentists/new-york.
+
+## Backlog (from user, Sep 2026)
+- Phase 2: advanced console (dashboard charts, businesses manager, users, leads CSV), SEO settings (favicon/OG/GA/AdSense/robots, per-page), Google Trends CSV -> nearby intent pages + new categories (pizza, gas stations, bars, breweries, thrift, liquor, diners, ice cream, breakfast, malls, post office, DMV...).
+- Phase 3: monthly auto-refresh scheduler + per-city refresh + location dedupe; search autocomplete (category/business/city/ZIP); black-screen flash audit.

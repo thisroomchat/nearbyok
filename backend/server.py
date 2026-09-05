@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, BeforeValidator, ConfigDict
 from db import client, db
 from auth import router as auth_router, get_current_user, optional_user, require_admin, User
 from catalog_extra import EXTRA_CATEGORIES, EXTRA_CITIES
+from owner import build_router as build_owner_router, Media, clean_media, EDITABLE_FIELDS as OWNER_EDITABLE
 
 GOOGLE_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 
@@ -181,6 +182,10 @@ def format_business(doc, center_lat=None, center_lng=None):
         "google_maps_uri": doc.get("google_maps_uri"), "editorial_summary": doc.get("editorial_summary"),
         "description": doc.get("description"), "own_services": doc.get("services"),
         "leads_call": doc.get("leads_call", 0),
+        "videos": doc.get("videos", []), "owner_media": doc.get("owner_media", []),
+        "claimed": bool(doc.get("claimed")), "claim_status": doc.get("claim_status"),
+        "tagline": doc.get("tagline"), "email": doc.get("email"), "social": doc.get("social"),
+        "owner_user_id": doc.get("owner_user_id"),
     }
 
 
@@ -308,7 +313,7 @@ async def seed_db():
 # ---------------------------------------------------------------------------
 # Google Places ingestion (live data)
 # ---------------------------------------------------------------------------
-PHOTO_LIMIT = 4
+PHOTO_LIMIT = 10
 PLACES_MASK = ("places.id,places.displayName,places.formattedAddress,places.location,places.rating,"
                "places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,"
                "places.websiteUri,places.regularOpeningHours,places.googleMapsUri,places.priceLevel,"
@@ -404,8 +409,17 @@ async def ingest_google(cat_slug, city_slug, pages=1):
                 "weekday_descriptions": reg.get("weekdayDescriptions", []),
                 "editorial_summary": (p.get("editorialSummary") or {}).get("text"),
                 "reviews": [map_review(rv) for rv in (p.get("reviews") or [])],
-                "source": "google", "status": "approved", "google_updated_at": now,
+                "source": "google", "status": "approved", "google_updated_at": now, "google_images": images,
             }
+            existing = await db.businesses.find_one({"id": doc["id"]}, {"_id": 0, "claimed": 1, "owner_media": 1, "owner_updated_at": 1})
+            if existing and existing.get("claimed"):
+                # Owner-managed listing: Google refresh must not overwrite owner edits / media.
+                if existing.get("owner_updated_at"):
+                    for k in OWNER_EDITABLE:
+                        doc.pop(k, None)
+                owner_imgs = [m["url"] for m in existing.get("owner_media", []) if m.get("type") == "image"]
+                doc["images"] = (owner_imgs + [u for u in uris if u]) or images
+                doc["verified"] = True
             await db.businesses.update_one({"id": doc["id"]}, {"$set": doc, "$setOnInsert": {"created_at": now}}, upsert=True)
             inserted += 1
     if inserted:
@@ -550,8 +564,19 @@ async def detail(category: str, state: str, city: str, slug: str, user: Optional
     similar = [format_business(d, city_cfg["lat"], city_cfg["lng"]) for d in similar_docs]
     similar.sort(key=lambda b: (b["rating"], b["reviews_count"]), reverse=True)
     all_for_faq = [biz] + similar
+    my_claim = None
+    if user:
+        my_claim = await db.claims.find_one({"business_id": doc["id"], "user_id": user.user_id}, {"_id": 0, "status": 1, "created_at": 1})
+    claim = {
+        "claimed": bool(doc.get("claimed")),
+        "is_owner": bool(user and doc.get("owner_user_id") == user.user_id),
+        "my_claim_status": my_claim["status"] if my_claim else None,
+        "can_claim": not doc.get("owner_user_id") and doc.get("source") != "owner" and not (my_claim and my_claim["status"] == "pending"),
+        "owner_name": doc.get("owner_name") if doc.get("claimed") else None,
+    }
     return {
         "business": biz,
+        "claim": claim,
         "hours": doc.get("weekday_descriptions") or hours_table(doc),
         "services": doc.get("services") or cat["services"],
         "seo": {
@@ -635,6 +660,7 @@ async def list_favorites(user: User = Depends(get_current_user)):
 class ReviewIn(BaseModel):
     rating: int = Field(ge=1, le=5)
     text: str = Field(min_length=3, max_length=2000)
+    media: List[Media] = []
 
 
 @api.post("/businesses/{business_id}/reviews")
@@ -643,6 +669,7 @@ async def post_review(business_id: str, body: ReviewIn, user: User = Depends(get
         raise HTTPException(404, "Business not found")
     doc = {"id": f"r-{uuid.uuid4().hex[:12]}", "business_id": business_id, "user_id": user.user_id,
            "author": user.name, "author_photo": user.picture, "rating": body.rating, "text": body.text.strip(),
+           "media": clean_media(body.media, 6),
            "source": "nearbyok", "created_at": datetime.now(timezone.utc).isoformat()}
     await db.reviews.update_one({"user_id": user.user_id, "business_id": business_id}, {"$set": doc}, upsert=True)
     users = await db.reviews.find({"business_id": business_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -673,6 +700,7 @@ class SubmitIn(BaseModel):
     closed_sunday: bool = False
     is_24_7: bool = False
     images: List[str] = []
+    media: List[Media] = []
 
 
 async def geocode(address):
@@ -699,13 +727,16 @@ async def submit_business(body: SubmitIn, user: User = Depends(get_current_user)
     if await db.businesses.find_one({"slug": slug, "city": body.city, "category": body.category}, {"_id": 0, "id": 1}):
         slug = f"{slug}-{uuid.uuid4().hex[:4]}"
     now = datetime.now(timezone.utc).isoformat()
+    owner_media = clean_media(body.media, 20)
+    owner_imgs = [m["url"] for m in owner_media if m["type"] == "image"]
     doc = {
         "id": f"o-{uuid.uuid4().hex[:12]}", "place_id": None, "slug": slug, "name": body.name.strip(),
         "category": body.category, "city": body.city, "area": body.area.strip(),
         "rating": 0, "reviews_count": 0, "phone": body.phone.strip(), "address": body.address.strip(),
         "website": body.website.strip(), "lat": lat or round(city["lat"] + rnd.uniform(-0.03, 0.03), 5),
         "lng": lng or round(city["lng"] + rnd.uniform(-0.03, 0.03), 5),
-        "images": [u for u in body.images if u.startswith("http")][:4] or cat["images"],
+        "images": (owner_imgs + [u for u in body.images if u.startswith("http")])[:20] or cat["images"],
+        "owner_media": owner_media, "videos": [m for m in owner_media if m["type"] == "video"], "google_images": [],
         "price_level": 2, "verified": False, "sponsored": False, "years": 1,
         "is_24_7": body.is_24_7, "open_hour": body.open_hour, "close_hour": body.close_hour,
         "closed_sunday": body.closed_sunday, "description": body.description.strip() or None,
@@ -750,9 +781,11 @@ async def admin_stats():
     by_source = {r["_id"]: r["n"] async for r in db.businesses.aggregate([{"$group": {"_id": "$source", "n": {"$sum": 1}}}])}
     recent = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(30)
     pending = await db.businesses.count_documents({"source": "owner", "status": "pending"})
+    pending_claims = await db.claims.count_documents({"status": "pending"})
     covered = await db.ingest_log.count_documents({"count": {"$gt": 0}})
     return {"total_leads": total_leads, "by_type": by_type, "top": top, "daily": list(reversed(daily)),
-            "by_source": by_source, "recent": recent, "pending_submissions": pending,
+            "by_source": by_source, "recent": recent, "pending_submissions": pending, "pending_claims": pending_claims,
+            "claimed": await db.businesses.count_documents({"claimed": True}),
             "coverage": {"done": covered, "total": len(CATEGORIES) * len(CITIES)},
             "users": await db.users.count_documents({}), "reviews": await db.reviews.count_documents({})}
 
@@ -867,6 +900,7 @@ async def robots():
 
 app.include_router(api)
 app.include_router(auth_router)
+app.include_router(build_owner_router(format_business, with_state, CAT_BY_SLUG, CITY_BY_SLUG))
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),

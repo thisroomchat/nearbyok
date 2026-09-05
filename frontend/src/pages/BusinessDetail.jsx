@@ -12,6 +12,10 @@ import { ShowNumber } from "@/components/ShowNumber";
 import { BusinessCard } from "@/components/BusinessCard";
 import { SaveButton } from "@/components/SaveButton";
 import { Reviews } from "@/components/Reviews";
+import { ClaimModal } from "@/components/ClaimModal";
+import { OwnerEditor } from "@/components/OwnerEditor";
+import { MediaLightbox } from "@/components/MediaUploader";
+import { useAuth } from "@/context/AuthContext";
 
 const iconMap = (name) => Icons[name?.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("")] || Icons.Building2;
 const ratingColor = (r) => (r >= 4.5 ? "bg-green-700" : r >= 4.0 ? "bg-green-600" : "bg-lime-600");
@@ -43,19 +47,31 @@ export default function BusinessDetail() {
   const [gallery, setGallery] = useState(0);
   const [enquiry, setEnquiry] = useState(false);
   const [sent, setSent] = useState(false);
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const { user } = useAuth();
 
+  const load = () => getDetail(category, state, city, slug).then(setData).catch(() => setNf(true));
   useEffect(() => {
     window.scrollTo(0, 0);
     setData(null); setNf(false);
-    getDetail(category, state, city, slug).then(setData).catch(() => setNf(true));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, state, city, slug]);
+  // Silent refresh when auth state resolves (saved / claim status are user-specific) — no loading flash.
+  useEffect(() => {
+    if (user) getDetail(category, state, city, slug).then(setData).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.user_id]);
 
   if (nf) return <div className="min-h-screen bg-slate-50"><Header /><div className="p-16 text-center text-slate-500">Business not found.</div><Footer /></div>;
   if (!data) return <div className="min-h-screen bg-slate-50"><Header /><div className="p-16 text-center text-slate-400">Loading…</div></div>;
 
-  const { business: b, seo, services, hours, similar } = data;
+  const { business: b, seo, services, hours, similar, claim } = data;
   const canonical = `https://nearbyok.com/${category}/${state}/${city}/${slug}`;
   const hoursObj = Array.isArray(hours) ? null : hours;
+  const media = [...(b.videos || []), ...b.images.map((u) => ({ url: u, type: "image", thumb: u }))];
 
   const whatsapp = async () => {
     await postLead({ business_id: b.id, type: "whatsapp" });
@@ -111,10 +127,13 @@ export default function BusinessDetail() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">{b.name}</h1>
-                  {b.verified && <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded"><BadgeCheck className="w-3.5 h-3.5" /> Verified</span>}
+                  {b.claimed ? <span data-testid="owner-verified-badge" className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 px-2 py-1 rounded"><BadgeCheck className="w-3.5 h-3.5" /> Verified · Owner managed</span>
+                    : b.verified && <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded"><BadgeCheck className="w-3.5 h-3.5" /> Verified</span>}
                   {b.source === "owner" && !b.verified && <span data-testid="unverified-badge" className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded"><AlertCircle className="w-3.5 h-3.5" /> Unverified · Owner listed</span>}
                   {b.source === "google" && <span data-testid="google-source-badge" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 px-2 py-1 rounded">Data via Google</span>}
+                  {claim?.my_claim_status === "pending" && <span data-testid="claim-pending-badge" className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 px-2 py-1 rounded">Your claim is under review</span>}
                 </div>
+                {b.tagline && <p className="text-sm text-slate-600 font-medium mt-1" data-testid="business-tagline">{b.tagline}</p>}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-sm">
                   <span className={`inline-flex items-center gap-1 ${ratingColor(b.rating)} text-white font-bold px-2 py-0.5 rounded`}>{b.rating} <Star className="w-3.5 h-3.5 fill-white" /></span>
                   <span className="text-slate-500">{b.reviews_count} Ratings</span>
@@ -138,18 +157,24 @@ export default function BusinessDetail() {
             </div>
           </Card>
 
-          {/* Gallery */}
-          <Card>
+          {/* Gallery (owner photos/videos first, then Google photos) */}
+          <Card testid="gallery-card">
             <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-3">
-              <img src={b.images[gallery]} alt={b.name} referrerPolicy="no-referrer" className="w-full h-64 sm:h-80 object-cover rounded-lg bg-slate-100" />
-              <div className={`grid ${b.images.length > 3 ? "grid-cols-4 sm:grid-cols-2" : "grid-cols-3 sm:grid-cols-1"} gap-3`}>
-                {b.images.map((img, i) => (
-                  <button key={i} onClick={() => setGallery(i)} className={`h-20 sm:h-[92px] rounded-lg overflow-hidden border-2 transition-colors ${gallery === i ? "border-orange-500" : "border-transparent"}`}>
-                    <img src={img} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+              <button type="button" onClick={() => setLightbox(gallery)} className="relative w-full h-64 sm:h-80 rounded-lg overflow-hidden bg-slate-100" data-testid="gallery-main">
+                {media[gallery]?.type === "video"
+                  ? <video src={media[gallery].url} poster={media[gallery].thumb} controls playsInline className="w-full h-full object-cover" onClick={(e) => e.stopPropagation()} />
+                  : <img src={media[gallery]?.url} alt={b.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />}
+              </button>
+              <div className={`grid ${media.length > 3 ? "grid-cols-4 sm:grid-cols-2" : "grid-cols-3 sm:grid-cols-1"} gap-3 sm:max-h-80 sm:overflow-y-auto`}>
+                {media.map((m, i) => (
+                  <button key={i} onClick={() => setGallery(i)} data-testid="gallery-thumb" className={`relative h-20 sm:h-[92px] rounded-lg overflow-hidden border-2 transition-colors ${gallery === i ? "border-orange-500" : "border-transparent"}`}>
+                    <img src={m.thumb || m.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    {m.type === "video" && <span className="absolute inset-0 flex items-center justify-center bg-black/25"><Icons.PlayCircle className="w-7 h-7 text-white" /></span>}
                   </button>
                 ))}
               </div>
             </div>
+            <p className="text-[11px] text-slate-400 mt-2">{media.length} photo{media.length === 1 ? "" : "s"}{b.videos?.length ? ` & video${b.videos.length === 1 ? "" : "s"}` : ""}{b.claimed ? " · uploaded by the owner and Google" : b.source === "google" ? " · via Google" : ""}</p>
           </Card>
 
           {/* Map + hours */}
@@ -185,7 +210,7 @@ export default function BusinessDetail() {
 
           {/* Reviews */}
           <Card title={`Reviews & Ratings — ${b.name}`} testid="reviews-card">
-            <Reviews key={b.id} businessId={b.id} google={data.reviews.google} users={data.reviews.users} />
+            <Reviews key={b.id} businessId={b.id} google={data.reviews.google} users={data.reviews.users} googleTotal={b.reviews_count} googleMapsUri={b.google_maps_uri} />
           </Card>
 
           {/* Services */}
@@ -240,8 +265,33 @@ export default function BusinessDetail() {
               <button onClick={whatsapp} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-3 rounded-lg flex items-center justify-center gap-2 text-sm transition-colors w-full"><MessageCircle className="w-4 h-4" /> WhatsApp Chat</button>
               {b.website && <a href={b.website} target="_blank" rel="noreferrer" className="border border-slate-300 hover:border-slate-900 text-slate-700 font-semibold px-4 py-3 rounded-lg flex items-center justify-center gap-2 text-sm transition-colors w-full"><Globe className="w-4 h-4" /> Website</a>}
               {b.google_maps_uri && <a href={b.google_maps_uri} target="_blank" rel="noreferrer" data-testid="google-maps-link" className="text-xs text-blue-600 hover:underline mt-1 inline-block">View on Google Maps →</a>}
-              <p className="text-[11px] text-slate-400 text-center pt-1">Phone number sourced directly from Google. Call the business directly — no middleman.</p>
+              <p className="text-[11px] text-slate-400 text-center pt-1">{b.claimed ? "Contact details maintained by the business owner." : "Phone number sourced directly from Google. Call the business directly — no middleman."}</p>
             </div>
+
+            {/* Claim / manage card */}
+            {claim?.is_owner ? (
+              <div className="bg-blue-600 text-white rounded-xl p-5" data-testid="owner-manage-card">
+                <h3 className="font-bold flex items-center gap-2"><BadgeCheck className="w-5 h-5" /> You manage this listing</h3>
+                <p className="text-sm text-blue-100 mt-1">Update hours, contact details, services and upload photos & videos.</p>
+                <button data-testid="owner-manage-button" onClick={() => setEditOpen(true)} className="mt-4 w-full bg-white text-blue-700 font-bold py-2.5 rounded-lg text-sm hover:bg-blue-50">Manage listing</button>
+              </div>
+            ) : claim?.claimed ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-5" data-testid="claimed-card">
+                <h3 className="font-bold text-slate-900 flex items-center gap-2"><BadgeCheck className="w-5 h-5 text-blue-600" /> Claimed & verified</h3>
+                <p className="text-sm text-slate-500 mt-1">This page is managed by the business owner{claim.owner_name ? ` (${claim.owner_name})` : ""}. Details are kept up to date.</p>
+              </div>
+            ) : claim?.my_claim_status === "pending" ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5" data-testid="claim-pending-card">
+                <h3 className="font-bold text-amber-800 flex items-center gap-2"><Clock className="w-5 h-5" /> Claim under review</h3>
+                <p className="text-sm text-amber-700 mt-1">We're verifying your ownership. You'll be able to manage this page once approved (24–48 hrs).</p>
+              </div>
+            ) : b.source !== "owner" && (
+              <div className="bg-white border border-slate-200 rounded-xl p-5" data-testid="claim-card">
+                <h3 className="font-bold text-slate-900">Own {b.name}?</h3>
+                <p className="text-sm text-slate-500 mt-1">Claim this free listing to add photos & videos, update hours and get the <span className="font-semibold text-blue-700">Verified</span> badge.</p>
+                <button data-testid="claim-business-button" onClick={() => setClaimOpen(true)} className="mt-4 w-full border-2 border-slate-900 hover:bg-slate-900 hover:text-white text-slate-900 font-bold py-2.5 rounded-lg text-sm transition-colors">Claim this business</button>
+              </div>
+            )}
 
             {/* Ad slot */}
             <div className="border-2 border-dashed border-slate-300 bg-slate-100 rounded-xl h-60 flex items-center justify-center text-slate-400 text-sm">
@@ -306,6 +356,9 @@ export default function BusinessDetail() {
           </div>
         </div>
       )}
+      {claimOpen && <ClaimModal business={b} onClose={() => setClaimOpen(false)} onSubmitted={load} />}
+      {editOpen && <OwnerEditor businessId={b.id} onClose={() => setEditOpen(false)} onSaved={() => { load(); setGallery(0); }} />}
+      <MediaLightbox items={media} index={lightbox} onClose={() => setLightbox(null)} onIndex={setLightbox} />
       <Footer />
     </div>
   );

@@ -101,3 +101,137 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+user_problem_statement: |
+  nearbyok.com (programmatic SEO local business directory, React + FastAPI + MongoDB). Phase 1 of continuation:
+  (1) Secure admin: /admin now 404s; secret console path from REACT_APP_ADMIN_PATH; username+password login -> JWT (X-Admin-Token header); 5 failed attempts -> 15 min IP lock.
+  (2) Site settings in DB (Cloudinary creds set from admin panel at runtime, secret masked) + signed Cloudinary upload signature endpoint.
+  (3) Claim listing flow: user claims Google-sourced business -> admin approve/reject/revoke -> owner gets Verified badge, can edit listing (PUT /api/my/listings/{id}) incl. owner photos/videos.
+  (4) Reviews accept media[]; free-listing submit accepts media[]; PHOTO_LIMIT 10 for Google ingest; Google re-ingest preserves owner edits/media on claimed listings.
+
+backend:
+  - task: "Admin auth: username/password -> JWT, rate limit, X-Admin-Token guard on /api/admin/*"
+    implemented: true
+    working: true
+    file: "backend/auth.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/auth/admin-login {username,password} -> {token, expires_at}; GET /api/auth/admin-me; wrong creds 401; 5 fails -> 429 lock. Credentials in /app/memory/test_credentials.md."
+      - working: true
+        agent: "testing"
+        comment: "✓ Admin login with valid credentials returns token and expires_at. ✓ Wrong password returns 401. ✓ GET /api/auth/admin-me works with token. ✓ Admin endpoints without token return 401. ✓ Rate limit: after 5 failed attempts, 6th attempt returns 429 (IP-based, 15 min lock). All tests passed."
+  - task: "Settings API (Cloudinary + site) and public settings"
+    implemented: true
+    working: true
+    file: "backend/owner.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GET/PUT /api/admin/settings (secret masked, blank secret keeps old), GET /api/settings/public -> media_enabled, POST /api/admin/settings/cloudinary-test."
+      - working: true
+        agent: "testing"
+        comment: "✓ GET /api/settings/public returns media_enabled (false initially). ✓ GET /api/admin/settings returns cloudinary with has_secret and secret_hint. ✓ PUT /api/admin/settings sets cloudinary creds, media_enabled becomes true, api_secret not returned, secret_hint shows '••••t123'. ✓ PUT with empty api_secret keeps has_secret true. ✓ POST /api/admin/settings/cloudinary-test with fake creds returns 400. ✓ Disabling cloudinary (blank cloud_name) makes media_enabled false and signature endpoint returns 503. All tests passed."
+  - task: "Media signature + delete endpoints"
+    implemented: true
+    working: true
+    file: "backend/owner.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GET /api/media/signature?resource_type=image|video&purpose=review|listing|claim (auth) -> 503 when Cloudinary not configured; returns signature when configured (use dummy creds to test signature shape). POST /api/media/delete."
+      - working: true
+        agent: "testing"
+        comment: "✓ GET /api/media/signature with valid auth returns signature, timestamp, cloud_name, api_key, folder (nearbyok/{purpose}/{user_id}), upload_url. ✓ Invalid purpose returns 400. ✓ Unauthenticated request returns 401. ✓ When cloudinary disabled, returns 503. All tests passed."
+  - task: "Claim listing flow (user claim, my claims, admin claims approve/reject/revoke)"
+    implemented: true
+    working: true
+    file: "backend/owner.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/businesses/{id}/claim, GET /api/my/claims, GET /api/admin/claims, POST /api/admin/claims/{id}/{approve|reject|revoke}. Approve sets owner_user_id, claimed=true, verified=true. Detail endpoint returns claim{claimed,is_owner,my_claim_status,can_claim}."
+      - working: true
+        agent: "testing"
+        comment: "✓ User A claims business with proof_media, returns status 'pending'. ✓ Duplicate claim returns 409. ✓ GET /api/my/claims shows claim with business. ✓ GET /api/detail as User A shows my_claim_status 'pending', can_claim false. ✓ GET /api/admin/claims?status=pending includes the claim with counts. ✓ Admin approve sets owner_user_id, claimed=true, verified=true. ✓ GET /api/detail as User A after approve shows is_owner true, claimed true, verified true. ✓ GET /api/detail as User B shows claimed true, can_claim false. ✓ User B claim attempt returns 409 (already claimed). ✓ Admin revoke removes owner, sets claimed false. All tests passed."
+  - task: "Owner listing edit (GET/PUT /api/my/listings/{id}) with media"
+    implemented: true
+    working: true
+    file: "backend/owner.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Owner only (403 otherwise). media[] -> owner_media, images = owner images + google_images, videos[]. format_business now returns videos, claimed, tagline etc."
+      - working: true
+        agent: "testing"
+        comment: "✓ GET /api/my/listings/{id} returns business, raw (editable fields), owner_media, google_images. ✓ PUT /api/my/listings/{id} with phone, tagline, description, services, hours, media (image + video) updates successfully. ✓ business.images[0] is owner image (p1.jpg), videos length 1 with thumb ending .jpg, tagline returned. ✓ GET /api/detail reflects changes (hours table shows Sunday Closed, services updated). ✓ User B PUT returns 403. ✓ PUT with empty body returns 400. ✓ GET /api/my/listings includes claimed business. All tests passed."
+  - task: "Reviews with media + submit with media + Google ingest preserving owner data"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "ReviewIn.media, SubmitIn.media. ingest_google skips OWNER_EDITABLE fields for claimed docs. Existing endpoints (home/listing/detail/search/leads/favorites/admin stats/ingest) must still work; admin endpoints now need X-Admin-Token."
+      - working: true
+        agent: "testing"
+        comment: "✓ POST /api/businesses/{id}/reviews with media returns users[0].media with 1 item. ✓ Non-https URL filtered out. ✓ GET /api/detail shows review media in reviews.users. ✓ POST /api/businesses/submit with media creates business with images[0] = s.jpg. ✓ GET /api/my/listings shows submission with media. ✓ Owner submissions are owner-managed (User B can GET/PUT their submission). ✓ POST /api/admin/ingest?category=dentists&city=new-york&pages=1 returns 200 with inserted count 20 (real Google API call successful). ✓ Google businesses have images (up to 10). ✓ All regression tests passed: /api/home, /api/catalog, /api/listing, /api/detail, /api/search, /api/leads, /api/favorites, /api/admin/stats (includes pending_claims and claimed), /api/admin/leads, /api/admin/submissions, /api/sitemap.xml. All tests passed."
+
+frontend:
+  - task: "Secret admin console route + username/password login + Claims & Settings tabs"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Admin.jsx, App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Route /nbk-console-i2r5lwly (REACT_APP_ADMIN_PATH); /admin -> NotFound page."
+  - task: "Claim modal, owner manage card, OwnerEditor, gallery with videos/lightbox, reviews with media, MediaUploader"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/BusinessDetail.jsx, components/ClaimModal.jsx, components/OwnerEditor.jsx, components/MediaUploader.jsx, components/Reviews.jsx, pages/Account.jsx, pages/ListBusiness.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Not yet tested by agent (ask user first)."
+
+metadata:
+  created_by: "main_agent"
+  version: "3.0"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Phase 1 backend done. Admin creds in /app/memory/test_credentials.md. User sessions: create user+session in Mongo per /app/auth_testing.md and use Authorization: Bearer. Please also run ONE real Google ingest (POST /api/admin/ingest?category=dentists&city=new-york) to verify GOOGLE key works and google_images field is saved; do not run ingest-all. Do not test frontend."
+  - agent: "testing"
+    message: "Backend testing complete. All 6 backend tasks tested and working. Comprehensive test suite executed with 49 passed tests covering: (1) Admin auth with JWT, rate limiting (IP-based, 15 min lock after 5 failures), X-Admin-Token guard. (2) Settings API with Cloudinary config, secret masking, media_enabled flag. (3) Media signature endpoint with auth, purpose validation, 503 when disabled. (4) Complete claim flow: user claim with proof_media, admin approve/reject/revoke, ownership transfer, verified badge. (5) Owner listing edit with media (images + videos), hours, services, tagline - owner-only access (403 for others). (6) Reviews with media, free listing submit with media, Google ingest (real API call successful, 20 businesses with up to 10 images). All regression tests passed: home, catalog, listing, detail, search, leads, favorites, admin stats (includes pending_claims and claimed), admin leads, submissions, sitemap. Google API key working. No critical issues found. Ready for user acceptance testing."

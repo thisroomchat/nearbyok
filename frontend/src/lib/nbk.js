@@ -5,9 +5,16 @@ export const API = `${BACKEND_URL}/api`;
 
 export const api = axios.create({ baseURL: API, withCredentials: true });
 api.interceptors.request.use((config) => {
-  const key = sessionStorage.getItem("nbk_admin_key");
-  if (key) config.headers["X-Admin-Key"] = key;
+  const token = sessionStorage.getItem("nbk_admin_token");
+  if (token) config.headers["X-Admin-Token"] = token;
   return config;
+});
+api.interceptors.response.use((r) => r, (err) => {
+  if (err?.response?.status === 401 && err.config?.url?.startsWith("/admin") && sessionStorage.getItem("nbk_admin_token")) {
+    sessionStorage.removeItem("nbk_admin_token");
+    window.dispatchEvent(new Event("nbk-admin-logout"));
+  }
+  return Promise.reject(err);
 });
 
 export const getHome = () => api.get("/home").then((r) => r.data);
@@ -24,7 +31,47 @@ export const postLead = (payload) => api.post("/leads", payload).then((r) => r.d
 export const postSession = (session_id) => api.post("/auth/session", { session_id }).then((r) => r.data);
 export const getMe = () => api.get("/auth/me").then((r) => r.data);
 export const postLogout = () => api.post("/auth/logout").then((r) => r.data);
-export const adminLogin = (password) => api.post("/auth/admin-login", { password }).then((r) => r.data);
+export const adminLogin = (username, password) => api.post("/auth/admin-login", { username, password }).then((r) => r.data);
+export const adminMe = () => api.get("/auth/admin-me").then((r) => r.data);
+
+// settings & media
+export const getPublicSettings = () => api.get("/settings/public").then((r) => r.data);
+export const getMediaSignature = (resource_type, purpose) => api.get("/media/signature", { params: { resource_type, purpose } }).then((r) => r.data);
+export const deleteMedia = (public_id, resource_type) => api.post("/media/delete", { public_id, resource_type }).then((r) => r.data);
+
+// Signed direct upload to Cloudinary (API secret never leaves the backend).
+export const uploadMedia = async (file, purpose, onProgress) => {
+  const isVideo = file.type.startsWith("video/");
+  const sig = await getMediaSignature(isVideo ? "video" : "image", purpose);
+  const form = new FormData();
+  form.append("file", file);
+  form.append("api_key", sig.api_key);
+  form.append("timestamp", sig.timestamp);
+  form.append("signature", sig.signature);
+  form.append("folder", sig.folder);
+  const res = await axios.post(sig.upload_url, form, {
+    onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded * 100) / e.total) : 0),
+  });
+  const d = res.data;
+  return {
+    url: d.secure_url, public_id: d.public_id, type: isVideo ? "video" : "image",
+    thumb: isVideo ? d.secure_url.replace(/\.[a-z0-9]+$/i, ".jpg") : d.secure_url,
+    width: d.width, height: d.height, duration: d.duration,
+  };
+};
+
+// claims & owner
+export const claimBusiness = (id, body) => api.post(`/businesses/${id}/claim`, body).then((r) => r.data);
+export const getMyClaims = () => api.get("/my/claims").then((r) => r.data);
+export const getMyListing = (id) => api.get(`/my/listings/${id}`).then((r) => r.data);
+export const updateMyListing = (id, body) => api.put(`/my/listings/${id}`, body).then((r) => r.data);
+
+// admin: claims & settings
+export const adminClaims = (status = "") => api.get("/admin/claims", { params: { status } }).then((r) => r.data);
+export const adminDecideClaim = (id, action, note = "") => api.post(`/admin/claims/${id}/${action}`, { note }).then((r) => r.data);
+export const adminGetSettings = () => api.get("/admin/settings").then((r) => r.data);
+export const adminPutSettings = (body) => api.put("/admin/settings", body).then((r) => r.data);
+export const adminTestCloudinary = () => api.post("/admin/settings/cloudinary-test").then((r) => r.data);
 
 // user features
 export const toggleFavorite = (id) => api.post(`/favorites/${id}`).then((r) => r.data);

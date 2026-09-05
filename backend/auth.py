@@ -1,11 +1,13 @@
 """Emergent-managed Google auth (session cookie) + simple admin key guard."""
 import os
 import uuid
+import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+import jwt
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response, Header
+from fastapi import APIRouter, HTTPException, Request, Response, Header, Depends
 from pydantic import BaseModel
 from db import db
 
@@ -53,9 +55,44 @@ async def optional_user(request: Request) -> Optional[User]:
         return None
 
 
-async def require_admin(x_admin_key: str = Header(default="")):
-    if not ADMIN_PASSWORD or x_admin_key != ADMIN_PASSWORD:
-        raise HTTPException(401, "Admin key invalid")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_JWT_SECRET = os.environ.get("ADMIN_JWT_SECRET") or ADMIN_PASSWORD or "change-me"
+ADMIN_TOKEN_HOURS = 12
+MAX_ATTEMPTS, LOCK_MINUTES = 5, 15
+_attempts: dict = {}  # ip -> {"n": int, "until": datetime}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else request.client.host) or "unknown"
+
+
+def issue_admin_token() -> tuple[str, str]:
+    exp = datetime.now(timezone.utc) + timedelta(hours=ADMIN_TOKEN_HOURS)
+    token = jwt.encode({"sub": ADMIN_USERNAME, "role": "admin", "exp": exp, "jti": uuid.uuid4().hex},
+                       ADMIN_JWT_SECRET, algorithm="HS256")
+    return token, exp.isoformat()
+
+
+def verify_admin_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, ADMIN_JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(401, "Admin session invalid or expired")
+    if payload.get("role") != "admin":
+        raise HTTPException(401, "Admin session invalid")
+    return payload
+
+
+async def require_admin(request: Request, x_admin_token: str = Header(default="")):
+    token = x_admin_token
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(401, "Admin authentication required")
+    return verify_admin_token(token)
 
 
 class SessionIn(BaseModel):
@@ -104,11 +141,34 @@ async def logout(request: Request, response: Response):
 
 
 class AdminLogin(BaseModel):
+    username: str = ""
     password: str
 
 
 @router.post("/admin-login")
-async def admin_login(body: AdminLogin):
-    if not ADMIN_PASSWORD or body.password != ADMIN_PASSWORD:
-        raise HTTPException(401, "Wrong password")
-    return {"ok": True}
+async def admin_login(body: AdminLogin, request: Request):
+    ip = _client_ip(request)
+    now = datetime.now(timezone.utc)
+    rec = _attempts.get(ip)
+    if rec and rec.get("until") and rec["until"] > now:
+        mins = int((rec["until"] - now).total_seconds() // 60) + 1
+        raise HTTPException(429, f"Too many failed attempts. Try again in {mins} min.")
+    ok = bool(ADMIN_PASSWORD) and secrets.compare_digest(body.password, ADMIN_PASSWORD) \
+        and secrets.compare_digest(body.username.strip().lower(), ADMIN_USERNAME.lower())
+    if not ok:
+        rec = _attempts.setdefault(ip, {"n": 0, "until": None})
+        rec["n"] += 1
+        if rec["n"] >= MAX_ATTEMPTS:
+            rec["until"] = now + timedelta(minutes=LOCK_MINUTES)
+            rec["n"] = 0
+        await db.admin_audit.insert_one({"type": "login_failed", "ip": ip, "username": body.username[:50], "at": now.isoformat()})
+        raise HTTPException(401, "Invalid username or password")
+    _attempts.pop(ip, None)
+    token, exp = issue_admin_token()
+    await db.admin_audit.insert_one({"type": "login_ok", "ip": ip, "at": now.isoformat()})
+    return {"token": token, "expires_at": exp, "username": ADMIN_USERNAME}
+
+
+@router.get("/admin-me")
+async def admin_me(payload: dict = Depends(require_admin)):
+    return {"username": payload.get("sub"), "exp": payload.get("exp")}

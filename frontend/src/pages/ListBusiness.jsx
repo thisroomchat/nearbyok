@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { Seo } from "@/components/Seo";
 import { useAuth } from "@/context/AuthContext";
 import { getCatalog, submitBusiness } from "@/lib/nbk";
+import { MediaUploader } from "@/components/MediaUploader";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => [h, `${h % 12 || 12}:00 ${h < 12 ? "AM" : "PM"}`]);
 const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 bg-white";
@@ -20,7 +21,7 @@ const Section = ({ icon: Icon, title, children }) => (
   </section>
 );
 
-const init = { name: "", category: "", city: "", area: "", address: "", phone: "", website: "", description: "", services: [], open_hour: 9, close_hour: 18, closed_sunday: false, is_24_7: false, images: ["", "", ""] };
+const init = { name: "", category: "", city: "", area: "", address: "", phone: "", website: "", description: "", services: [], open_hour: 9, close_hour: 18, closed_sunday: false, is_24_7: false, images: [], media: [] };
 
 export default function ListBusiness() {
   const { user, loading, login } = useAuth();
@@ -40,7 +41,7 @@ export default function ListBusiness() {
     if (!user) { login("/list-your-business"); return; }
     setBusy(true);
     try {
-      const r = await submitBusiness({ ...f, open_hour: +f.open_hour, close_hour: +f.close_hour, images: f.images.filter(Boolean) });
+      const r = await submitBusiness({ ...f, open_hour: +f.open_hour, close_hour: +f.close_hour, images: [], media: f.media });
       setDone(r);
       window.scrollTo(0, 0);
     } catch (err) {
@@ -127,10 +128,14 @@ export default function ListBusiness() {
               </div>
             </Section>
 
-            <Section icon={ImageIcon} title="Photos (optional)">
-              {f.images.map((u, i) => (
-                <Field key={i} label={`Photo URL ${i + 1}`}><input data-testid={`lb-image-${i}`} value={u} onChange={(e) => setF((s) => { const im = [...s.images]; im[i] = e.target.value; return { ...s, images: im }; })} placeholder="https://…/photo.jpg" className={inputCls} /></Field>
-              ))}
+            <Section icon={ImageIcon} title="Photos & videos (optional)">
+              <div className="sm:col-span-2">
+                {user ? (
+                  <MediaUploader value={f.media} onChange={(m) => setF((s) => ({ ...s, media: m }))} purpose="listing" max={12} label="Upload from your phone gallery or camera — first photo becomes the cover" testId="lb-media-uploader" />
+                ) : (
+                  <p className="text-sm text-slate-500 bg-slate-50 border border-dashed border-slate-300 rounded-lg p-4">Sign in with Google (one click, below) to upload photos & videos from your phone.</p>
+                )}
+              </div>
             </Section>
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
