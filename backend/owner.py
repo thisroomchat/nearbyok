@@ -32,8 +32,9 @@ def now_iso():
 DEFAULT_SETTINGS = {
     "id": SETTINGS_ID,
     "cloudinary": {"cloud_name": "", "api_key": "", "api_secret": ""},
-    "site": {"name": "nearbyok", "title_suffix": "nearbyok.com", "description": "", "favicon_url": "", "og_image_url": "",
-             "ga_id": "", "adsense_client": "", "robots_extra": ""},
+    "site": {"name": "nearbyok", "title_suffix": "nearbyok.com", "description": "", "keywords": "", "favicon_url": "", "og_image_url": "",
+             "home_title": "", "home_description": "", "twitter": "", "google_verification": "", "bing_verification": "",
+             "ga_id": "", "adsense_client": "", "robots_extra": "", "canonical_base": "https://nearbyok.com"},
 }
 
 

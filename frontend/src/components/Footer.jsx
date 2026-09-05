@@ -10,6 +10,8 @@ export const Footer = () => (
       <div className="mb-8">
         <h3 className="text-white font-bold text-lg mb-4">Featured Links</h3>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-400">
+          <Link to="/nearby" data-testid="footer-nearby-link" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5 font-semibold text-slate-300">Nearby searches</Link>
+          <Link to="/list-your-business" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5">List your business</Link>
           {FEATURED.map((f) => (
             <a key={f} href="#" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5 last:border-0">{f}</a>
           ))}

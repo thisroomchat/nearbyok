@@ -73,6 +73,38 @@ export const adminGetSettings = () => api.get("/admin/settings").then((r) => r.d
 export const adminPutSettings = (body) => api.put("/admin/settings", body).then((r) => r.data);
 export const adminTestCloudinary = () => api.post("/admin/settings/cloudinary-test").then((r) => r.data);
 
+// admin: console extras
+export const adminAnalytics = (days = 30) => api.get("/admin/analytics", { params: { days } }).then((r) => r.data);
+export const adminBusinesses = (params) => api.get("/admin/businesses", { params }).then((r) => r.data);
+export const adminPatchBusiness = (id, body) => api.patch(`/admin/businesses/${id}`, body).then((r) => r.data);
+export const adminDeleteBusiness = (id) => api.delete(`/admin/businesses/${id}`).then((r) => r.data);
+export const adminReviews = (params) => api.get("/admin/reviews", { params }).then((r) => r.data);
+export const adminDeleteReview = (id) => api.delete(`/admin/reviews/${id}`).then((r) => r.data);
+export const adminUsers = (params) => api.get("/admin/users", { params }).then((r) => r.data);
+export const adminAudit = () => api.get("/admin/audit").then((r) => r.data);
+export const adminLeadsCsvUrl = () => `${API}/admin/leads/export.csv`;
+export const adminSeoList = () => api.get("/admin/seo").then((r) => r.data);
+export const adminSeoPut = (body) => api.put("/admin/seo", body).then((r) => r.data);
+export const adminSeoDelete = (path) => api.delete("/admin/seo", { params: { path } }).then((r) => r.data);
+export const adminMediaSignature = (resource_type = "image") => api.get("/admin/media/signature", { params: { resource_type } }).then((r) => r.data);
+export const adminUploadSiteImage = async (file) => {
+  const sig = await adminMediaSignature("image");
+  const form = new FormData();
+  form.append("file", file); form.append("api_key", sig.api_key); form.append("timestamp", sig.timestamp); form.append("signature", sig.signature); form.append("folder", sig.folder);
+  const res = await axios.post(sig.upload_url, form);
+  return res.data.secure_url;
+};
+export const adminTrends = () => api.get("/admin/trends").then((r) => r.data);
+export const adminTrendsUpload = (file, kind) => { const f = new FormData(); f.append("file", file); f.append("kind", kind); return api.post("/admin/trends/upload", f).then((r) => r.data); };
+export const adminTrendPatch = (id, body) => api.patch(`/admin/trends/${id}`, body).then((r) => r.data);
+export const adminTrendDelete = (id) => api.delete(`/admin/trends/${id}`).then((r) => r.data);
+export const adminTrendsBulk = (body) => api.post("/admin/trends/bulk", body).then((r) => r.data);
+
+// public: seo + nearby pages
+export const getSeoOverride = (path) => api.get("/seo", { params: { path } }).then((r) => r.data);
+export const getNearbyIndex = () => api.get("/nearby").then((r) => r.data);
+export const getNearbyPage = (slug, params = {}) => api.get(`/nearby/${slug}`, { params }).then((r) => r.data);
+
 // user features
 export const toggleFavorite = (id) => api.post(`/favorites/${id}`).then((r) => r.data);
 export const getFavorites = () => api.get("/favorites").then((r) => r.data);

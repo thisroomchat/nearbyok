@@ -2,6 +2,9 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
+import { SiteProvider } from "@/context/SiteContext";
+import NearbyHub from "@/pages/NearbyHub";
+import NearbyQuery from "@/pages/NearbyQuery";
 import Home from "@/pages/Home";
 import Listing from "@/pages/Listing";
 import BusinessDetail from "@/pages/BusinessDetail";
@@ -22,6 +25,8 @@ function AppRouter() {
       <Route path="/" element={<Home />} />
       <Route path="/account" element={<Account />} />
       <Route path="/list-your-business" element={<ListBusiness />} />
+      <Route path="/nearby" element={<NearbyHub />} />
+      <Route path="/nearby/:slug" element={<NearbyQuery />} />
       <Route path={`/${ADMIN_PATH}`} element={<Admin />} />
       <Route path="/admin" element={<NotFound />} />
       <Route path="/:category/:state/:city" element={<Listing />} />
@@ -35,10 +40,12 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <AuthProvider>
-          <AppRouter />
-          <Toaster position="top-center" richColors />
-        </AuthProvider>
+        <SiteProvider>
+          <AuthProvider>
+            <AppRouter />
+            <Toaster position="top-center" richColors />
+          </AuthProvider>
+        </SiteProvider>
       </BrowserRouter>
     </div>
   );

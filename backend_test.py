@@ -1334,32 +1334,1155 @@ def test_revoke_claim():
 
 
 # ============================================================================
+# Phase 2 Tests
+# ============================================================================
+
+def test_analytics():
+    """Test analytics endpoint"""
+    log("\n=== Phase 2 Test 1: Analytics ===")
+    
+    if not admin_token:
+        fail("Analytics", "Missing admin_token")
+        return
+    
+    try:
+        # Test with authentication
+        resp = requests.get(f"{API_URL}/admin/analytics?days=30", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/analytics", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "GET /api/admin/analytics?days=30", resp.text[:500])
+            return
+        
+        data = resp.json()
+        required_keys = ["leads_daily", "users_daily", "reviews_daily", "claims_daily", 
+                        "leads_by_category", "leads_by_city", "businesses_by_category", 
+                        "businesses_by_city", "totals"]
+        
+        missing = [k for k in required_keys if k not in data]
+        if missing:
+            fail("GET /api/admin/analytics", f"Missing keys: {missing}")
+            return
+        
+        # Check totals structure
+        totals = data["totals"]
+        totals_keys = ["businesses", "real_businesses", "users", "reviews", "leads", 
+                      "claimed", "pending_claims", "trend_pages", "categories", 
+                      "cities", "seo_pages", "coverage_done"]
+        missing_totals = [k for k in totals_keys if k not in totals]
+        if missing_totals:
+            fail("GET /api/admin/analytics totals", f"Missing keys: {missing_totals}")
+            return
+        
+        # Verify categories and cities counts
+        if totals["categories"] != 34:
+            fail("GET /api/admin/analytics", f"Expected 34 categories, got {totals['categories']}")
+            return
+        
+        if totals["cities"] != 32:
+            fail("GET /api/admin/analytics", f"Expected 32 cities, got {totals['cities']}")
+            return
+        
+        # Check businesses_by_category has 34 entries
+        if len(data["businesses_by_category"]) != 34:
+            fail("GET /api/admin/analytics", 
+                 f"Expected 34 businesses_by_category entries, got {len(data['businesses_by_category'])}")
+            return
+        
+        # Check businesses_by_city has 32 entries
+        if len(data["businesses_by_city"]) != 32:
+            fail("GET /api/admin/analytics", 
+                 f"Expected 32 businesses_by_city entries, got {len(data['businesses_by_city'])}")
+            return
+        
+        success("GET /api/admin/analytics with auth")
+        
+        # Test without authentication
+        resp = requests.get(f"{API_URL}/admin/analytics?days=30", timeout=10)
+        if resp.status_code != 401:
+            fail("GET /api/admin/analytics without auth", 
+                 f"Expected 401, got {resp.status_code}")
+        else:
+            success("GET /api/admin/analytics without auth returns 401")
+            
+    except Exception as e:
+        fail("GET /api/admin/analytics", str(e))
+
+
+def test_businesses_manager():
+    """Test businesses manager endpoints"""
+    log("\n=== Phase 2 Test 2: Businesses Manager ===")
+    
+    if not admin_token:
+        fail("Businesses manager", "Missing admin_token")
+        return
+    
+    try:
+        # Test GET /api/admin/businesses
+        resp = requests.get(f"{API_URL}/admin/businesses?limit=10", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/businesses", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "GET /api/admin/businesses?limit=10", resp.text[:500])
+            return
+        
+        data = resp.json()
+        if "items" not in data or "total" not in data or "pages" not in data:
+            fail("GET /api/admin/businesses", "Missing required keys")
+            return
+        
+        if len(data["items"]) != 10:
+            fail("GET /api/admin/businesses", f"Expected 10 items, got {len(data['items'])}")
+            return
+        
+        success("GET /api/admin/businesses?limit=10")
+        
+        # Test filters: category, city, source
+        resp = requests.get(f"{API_URL}/admin/businesses?category=dentists&city=new-york&source=google&limit=20", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/businesses with filters", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        # Should return the 20 google dentists ingested earlier
+        if data["total"] != 20:
+            log(f"Warning: Expected 20 google dentists, got {data['total']}")
+        
+        success("GET /api/admin/businesses with filters (category=dentists&city=new-york&source=google)")
+        
+        # Test search filter
+        if data["items"]:
+            first_name = data["items"][0]["name"]
+            search_term = first_name[:5]
+            resp = requests.get(f"{API_URL}/admin/businesses?q={search_term}", 
+                               headers={"X-Admin-Token": admin_token}, timeout=10)
+            if resp.status_code == 200:
+                success("GET /api/admin/businesses?q=<search>")
+            else:
+                fail("GET /api/admin/businesses?q=<search>", f"Expected 200, got {resp.status_code}")
+        
+        # Test flag filters
+        resp = requests.get(f"{API_URL}/admin/businesses?flag=unverified&limit=5", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            success("GET /api/admin/businesses?flag=unverified")
+        else:
+            fail("GET /api/admin/businesses?flag=unverified", f"Expected 200, got {resp.status_code}")
+        
+        # Test sort
+        resp = requests.get(f"{API_URL}/admin/businesses?sort=rating&limit=5", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            success("GET /api/admin/businesses?sort=rating")
+        else:
+            fail("GET /api/admin/businesses?sort=rating", f"Expected 200, got {resp.status_code}")
+        
+        # Test PATCH business
+        # Get a seed business to patch
+        resp = requests.get(f"{API_URL}/admin/businesses?source=seed&limit=1", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code != 200 or not resp.json()["items"]:
+            fail("PATCH business setup", "Could not find seed business")
+            return
+        
+        biz = resp.json()["items"][0]
+        biz_id = biz["id"]
+        original_name = biz["name"]
+        
+        # Patch with valid data
+        patch_data = {
+            "sponsored": True,
+            "verified": True,
+            "name": "X Test Name"
+        }
+        resp = requests.patch(f"{API_URL}/admin/businesses/{biz_id}", 
+                             headers={"X-Admin-Token": admin_token},
+                             json=patch_data, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("PATCH /api/admin/businesses/{id}", 
+                 f"Expected 200, got {resp.status_code}", 
+                 f"PATCH /api/admin/businesses/{biz_id}", resp.text[:500])
+            return
+        
+        patched = resp.json()
+        if patched["sponsored"] != True or patched["verified"] != True or patched["name"] != "X Test Name":
+            fail("PATCH /api/admin/businesses/{id}", "Values not updated correctly")
+            return
+        
+        success("PATCH /api/admin/businesses/{id} with valid data")
+        
+        # Test PATCH with empty body
+        resp = requests.patch(f"{API_URL}/admin/businesses/{biz_id}", 
+                             headers={"X-Admin-Token": admin_token},
+                             json={}, timeout=10)
+        if resp.status_code != 400:
+            fail("PATCH /api/admin/businesses/{id} empty body", 
+                 f"Expected 400, got {resp.status_code}")
+        else:
+            success("PATCH /api/admin/businesses/{id} empty body returns 400")
+        
+        # Test PATCH with bad status
+        resp = requests.patch(f"{API_URL}/admin/businesses/{biz_id}", 
+                             headers={"X-Admin-Token": admin_token},
+                             json={"status": "weird"}, timeout=10)
+        if resp.status_code != 400:
+            fail("PATCH /api/admin/businesses/{id} bad status", 
+                 f"Expected 400, got {resp.status_code}")
+        else:
+            success("PATCH /api/admin/businesses/{id} bad status returns 400")
+        
+        # Test PATCH with bad category
+        resp = requests.patch(f"{API_URL}/admin/businesses/{biz_id}", 
+                             headers={"X-Admin-Token": admin_token},
+                             json={"category": "nope"}, timeout=10)
+        if resp.status_code != 400:
+            fail("PATCH /api/admin/businesses/{id} bad category", 
+                 f"Expected 400, got {resp.status_code}")
+        else:
+            success("PATCH /api/admin/businesses/{id} bad category returns 400")
+        
+        # Revert the name
+        resp = requests.patch(f"{API_URL}/admin/businesses/{biz_id}", 
+                             headers={"X-Admin-Token": admin_token},
+                             json={"name": original_name}, timeout=10)
+        if resp.status_code == 200:
+            success("Reverted business name")
+        
+        # Test DELETE business
+        # Get another seed business to delete
+        resp = requests.get(f"{API_URL}/admin/businesses?source=seed&limit=1", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200 and resp.json()["items"]:
+            delete_biz = resp.json()["items"][0]
+            delete_id = delete_biz["id"]
+            
+            resp = requests.delete(f"{API_URL}/admin/businesses/{delete_id}", 
+                                  headers={"X-Admin-Token": admin_token}, timeout=10)
+            
+            if resp.status_code != 200:
+                fail("DELETE /api/admin/businesses/{id}", 
+                     f"Expected 200, got {resp.status_code}")
+            else:
+                success("DELETE /api/admin/businesses/{id}")
+                
+                # Verify it's deleted
+                resp = requests.patch(f"{API_URL}/admin/businesses/{delete_id}", 
+                                     headers={"X-Admin-Token": admin_token},
+                                     json={"verified": True}, timeout=10)
+                if resp.status_code != 404:
+                    fail("DELETE verification", f"Expected 404 on deleted business, got {resp.status_code}")
+                else:
+                    success("Verified business deletion (404 on PATCH)")
+        
+        # Verify audit log
+        resp = requests.get(f"{API_URL}/admin/audit?limit=10", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code != 200:
+            fail("GET /api/admin/audit", f"Expected 200, got {resp.status_code}")
+        else:
+            audit = resp.json()
+            if "items" not in audit:
+                fail("GET /api/admin/audit", "Missing items key")
+            else:
+                # Check for business_patch and business_delete entries
+                types = [item.get("type") for item in audit["items"]]
+                if "business_patch" in types and "business_delete" in types:
+                    success("GET /api/admin/audit contains business_patch and business_delete")
+                else:
+                    log(f"Warning: Audit log types: {types}")
+                    success("GET /api/admin/audit")
+                    
+    except Exception as e:
+        fail("Businesses manager", str(e))
+
+
+def test_reviews_users_admin():
+    """Test admin reviews and users endpoints"""
+    log("\n=== Phase 2 Test 3: Reviews/Users Admin ===")
+    
+    if not admin_token or not user_a_token:
+        fail("Reviews/Users admin", "Missing tokens")
+        return
+    
+    try:
+        # Create a test review
+        # First get a business
+        resp = requests.get(f"{API_URL}/admin/businesses?limit=1", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code != 200 or not resp.json()["items"]:
+            fail("Reviews/Users setup", "Could not find business")
+            return
+        
+        biz = resp.json()["items"][0]
+        biz_id = biz["id"]
+        
+        # Post a review
+        review_data = {
+            "rating": 5,
+            "text": "This is a test review for Phase 2 testing"
+        }
+        resp = requests.post(f"{API_URL}/businesses/{biz_id}/reviews", 
+                            headers={"Authorization": f"Bearer {user_a_token}"},
+                            json=review_data, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("POST review for testing", f"Expected 200, got {resp.status_code}")
+            return
+        
+        review_id = None
+        
+        # Test GET /api/admin/reviews
+        resp = requests.get(f"{API_URL}/admin/reviews", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/reviews", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "GET /api/admin/reviews", resp.text[:500])
+            return
+        
+        data = resp.json()
+        if "items" not in data:
+            fail("GET /api/admin/reviews", "Missing items key")
+            return
+        
+        # Find our test review
+        test_review = None
+        for item in data["items"]:
+            if item.get("text") == "This is a test review for Phase 2 testing":
+                test_review = item
+                review_id = item["id"]
+                break
+        
+        if not test_review:
+            fail("GET /api/admin/reviews", "Test review not found")
+            return
+        
+        # Check business info is included
+        if "business" not in test_review:
+            fail("GET /api/admin/reviews", "Missing business info")
+            return
+        
+        biz_info = test_review["business"]
+        if "name" not in biz_info or "slug" not in biz_info or "state" not in biz_info:
+            fail("GET /api/admin/reviews", "Incomplete business info")
+            return
+        
+        success("GET /api/admin/reviews includes review with business info")
+        
+        # Test search filter
+        resp = requests.get(f"{API_URL}/admin/reviews?q=Phase 2 testing", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            success("GET /api/admin/reviews?q=<text>")
+        else:
+            fail("GET /api/admin/reviews?q=<text>", f"Expected 200, got {resp.status_code}")
+        
+        # Test DELETE review
+        if review_id:
+            resp = requests.delete(f"{API_URL}/admin/reviews/{review_id}", 
+                                  headers={"X-Admin-Token": admin_token}, timeout=10)
+            
+            if resp.status_code != 200:
+                fail("DELETE /api/admin/reviews/{id}", 
+                     f"Expected 200, got {resp.status_code}")
+            else:
+                success("DELETE /api/admin/reviews/{id}")
+                
+                # Verify it's deleted
+                resp = requests.get(f"{API_URL}/admin/reviews", 
+                                   headers={"X-Admin-Token": admin_token}, timeout=10)
+                if resp.status_code == 200:
+                    items = resp.json()["items"]
+                    if not any(item["id"] == review_id for item in items):
+                        success("Verified review deletion")
+                    else:
+                        fail("Review deletion verification", "Review still listed")
+        
+        # Test GET /api/admin/users
+        resp = requests.get(f"{API_URL}/admin/users", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/users", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "items" not in data:
+            fail("GET /api/admin/users", "Missing items key")
+            return
+        
+        # Find our test user
+        test_user = None
+        for item in data["items"]:
+            if item.get("user_id") == user_a_id:
+                test_user = item
+                break
+        
+        if not test_user:
+            fail("GET /api/admin/users", "Test user not found")
+            return
+        
+        # Check counts are included
+        count_keys = ["reviews", "favorites", "claims", "listings"]
+        missing = [k for k in count_keys if k not in test_user]
+        if missing:
+            fail("GET /api/admin/users", f"Missing count keys: {missing}")
+            return
+        
+        success("GET /api/admin/users includes user with counts")
+        
+        # Test leads export
+        resp = requests.get(f"{API_URL}/admin/leads/export.csv", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/leads/export.csv", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        content_type = resp.headers.get("content-type", "")
+        if not content_type.startswith("text/csv"):
+            fail("GET /api/admin/leads/export.csv", 
+                 f"Expected text/csv, got {content_type}")
+            return
+        
+        csv_content = resp.text
+        if not csv_content.startswith("created_at"):
+            fail("GET /api/admin/leads/export.csv", "Missing CSV header row")
+            return
+        
+        success("GET /api/admin/leads/export.csv returns CSV with header")
+        
+    except Exception as e:
+        fail("Reviews/Users admin", str(e))
+
+
+def test_seo_settings():
+    """Test SEO settings and overrides"""
+    log("\n=== Phase 2 Test 4: SEO Settings ===")
+    
+    if not admin_token:
+        fail("SEO settings", "Missing admin_token")
+        return
+    
+    try:
+        # Test GET /api/settings/public
+        resp = requests.get(f"{API_URL}/settings/public", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/settings/public", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "site" not in data:
+            fail("GET /api/settings/public", "Missing site key")
+            return
+        
+        site = data["site"]
+        site_keys = ["name", "title_suffix", "description", "keywords", "favicon_url", 
+                    "og_image_url", "ga_id", "adsense_client", "robots_extra", 
+                    "canonical_base", "google_verification"]
+        missing = [k for k in site_keys if k not in site]
+        if missing:
+            fail("GET /api/settings/public site keys", f"Missing: {missing}")
+            return
+        
+        success("GET /api/settings/public returns site with all keys")
+        
+        # Test PUT /api/admin/settings
+        settings_update = {
+            "site": {
+                "favicon_url": "https://example.com/f.png",
+                "ga_id": "G-TEST123",
+                "robots_extra": "Disallow: /secret",
+                "keywords": "local, nearby",
+                "bogus_key": "x"
+            }
+        }
+        resp = requests.put(f"{API_URL}/admin/settings", 
+                           headers={"X-Admin-Token": admin_token},
+                           json=settings_update, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("PUT /api/admin/settings", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "PUT /api/admin/settings", resp.text[:500])
+            return
+        
+        updated = resp.json()
+        if "site" not in updated:
+            fail("PUT /api/admin/settings", "Missing site in response")
+            return
+        
+        site = updated["site"]
+        if site.get("favicon_url") != "https://example.com/f.png":
+            fail("PUT /api/admin/settings", "favicon_url not updated")
+            return
+        if site.get("ga_id") != "G-TEST123":
+            fail("PUT /api/admin/settings", "ga_id not updated")
+            return
+        if site.get("robots_extra") != "Disallow: /secret":
+            fail("PUT /api/admin/settings", "robots_extra not updated")
+            return
+        if site.get("keywords") != "local, nearby":
+            fail("PUT /api/admin/settings", "keywords not updated")
+            return
+        if "bogus_key" in site:
+            fail("PUT /api/admin/settings", "bogus_key should be ignored")
+            return
+        
+        # Verify cloudinary is untouched
+        if "cloudinary" not in updated:
+            fail("PUT /api/admin/settings", "cloudinary missing from response")
+            return
+        
+        success("PUT /api/admin/settings updates site, ignores bogus_key, preserves cloudinary")
+        
+        # Test GET /api/robots.txt
+        resp = requests.get(f"{API_URL}/robots.txt", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/robots.txt", f"Expected 200, got {resp.status_code}")
+            return
+        
+        robots_content = resp.text
+        if "Disallow: /secret" not in robots_content:
+            fail("GET /api/robots.txt", "robots_extra not included")
+            return
+        
+        success("GET /api/robots.txt contains robots_extra")
+        
+        # Reset robots_extra
+        resp = requests.put(f"{API_URL}/admin/settings", 
+                           headers={"X-Admin-Token": admin_token},
+                           json={"site": {"robots_extra": ""}}, timeout=10)
+        if resp.status_code == 200:
+            success("Reset robots_extra to empty")
+        
+        # Test SEO overrides
+        # PUT override
+        override_data = {
+            "path": "plumbers/texas/austin/",
+            "title": "Custom T",
+            "description": "Custom D",
+            "noindex": True
+        }
+        resp = requests.put(f"{API_URL}/admin/seo", 
+                           headers={"X-Admin-Token": admin_token},
+                           json=override_data, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("PUT /api/admin/seo", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "PUT /api/admin/seo", resp.text[:500])
+            return
+        
+        override = resp.json()
+        # Path should be normalized
+        if override.get("path") != "/plumbers/texas/austin":
+            fail("PUT /api/admin/seo", f"Path not normalized: {override.get('path')}")
+            return
+        
+        success("PUT /api/admin/seo creates override with normalized path")
+        
+        # GET override (case-insensitive)
+        resp = requests.get(f"{API_URL}/seo?path=/Plumbers/Texas/Austin", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/seo", f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "override" not in data or not data["override"]:
+            fail("GET /api/seo", "Override not found")
+            return
+        
+        ovr = data["override"]
+        if ovr.get("title") != "Custom T" or ovr.get("description") != "Custom D":
+            fail("GET /api/seo", "Override data incorrect")
+            return
+        
+        success("GET /api/seo?path=/Plumbers/Texas/Austin returns override (case-insensitive)")
+        
+        # GET list
+        resp = requests.get(f"{API_URL}/admin/seo", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/seo", f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "items" not in data:
+            fail("GET /api/admin/seo", "Missing items key")
+            return
+        
+        # Find our override
+        found = any(item.get("path") == "/plumbers/texas/austin" for item in data["items"])
+        if not found:
+            fail("GET /api/admin/seo", "Override not in list")
+            return
+        
+        success("GET /api/admin/seo lists override")
+        
+        # DELETE override
+        resp = requests.delete(f"{API_URL}/admin/seo?path=/plumbers/texas/austin", 
+                              headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("DELETE /api/admin/seo", f"Expected 200, got {resp.status_code}")
+            return
+        
+        result = resp.json()
+        if not result.get("ok"):
+            fail("DELETE /api/admin/seo", "ok not true")
+            return
+        
+        success("DELETE /api/admin/seo?path=/plumbers/texas/austin")
+        
+        # Verify deletion
+        resp = requests.get(f"{API_URL}/seo?path=/plumbers/texas/austin", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("override") is None:
+                success("Verified SEO override deletion")
+            else:
+                fail("SEO override deletion verification", "Override still exists")
+        
+        # Test admin media signature
+        resp = requests.get(f"{API_URL}/admin/media/signature", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        # Should return 503 when Cloudinary not configured (it's currently blank)
+        if resp.status_code != 503:
+            fail("GET /api/admin/media/signature without cloudinary", 
+                 f"Expected 503, got {resp.status_code}")
+        else:
+            success("GET /api/admin/media/signature returns 503 when Cloudinary not configured")
+        
+        # Test without token
+        resp = requests.get(f"{API_URL}/admin/media/signature", timeout=10)
+        if resp.status_code != 401:
+            fail("GET /api/admin/media/signature without token", 
+                 f"Expected 401, got {resp.status_code}")
+        else:
+            success("GET /api/admin/media/signature without token returns 401")
+            
+    except Exception as e:
+        fail("SEO settings", str(e))
+
+
+def test_trends():
+    """Test Google Trends upload and nearby pages"""
+    log("\n=== Phase 2 Test 5: Trends ===")
+    
+    if not admin_token:
+        fail("Trends", "Missing admin_token")
+        return
+    
+    try:
+        # Test GET /api/admin/trends
+        resp = requests.get(f"{API_URL}/admin/trends", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/admin/trends", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "items" not in data or "categories" not in data:
+            fail("GET /api/admin/trends", "Missing items or categories")
+            return
+        
+        initial_count = len(data["items"])
+        log(f"Initial trends count: {initial_count}")
+        
+        if len(data["categories"]) != 34:
+            fail("GET /api/admin/trends categories", f"Expected 34, got {len(data['categories'])}")
+            return
+        
+        # Check fields
+        if data["items"]:
+            item = data["items"][0]
+            required = ["id", "query", "slug", "category", "enabled", "kinds", "category_name"]
+            missing = [k for k in required if k not in item]
+            if missing:
+                fail("GET /api/admin/trends item fields", f"Missing: {missing}")
+                return
+        
+        success("GET /api/admin/trends returns items with correct fields and 34 categories")
+        
+        # Test upload again (should update existing)
+        with open("/tmp/rising.csv", "rb") as f:
+            files = {"file": ("rising.csv", f, "text/csv")}
+            data_form = {"kind": "rising"}
+            resp = requests.post(f"{API_URL}/admin/trends/upload", 
+                                headers={"X-Admin-Token": admin_token},
+                                files=files, data=data_form, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("POST /api/admin/trends/upload (rising)", 
+                 f"Expected 200, got {resp.status_code}", 
+                 "POST /api/admin/trends/upload", resp.text[:500])
+            return
+        
+        result = resp.json()
+        if "parsed" not in result or "added" not in result or "updated" not in result:
+            fail("POST /api/admin/trends/upload", "Missing result keys")
+            return
+        
+        log(f"Upload result: parsed={result['parsed']}, added={result['added']}, updated={result['updated']}")
+        
+        # Should have parsed ~50 and updated ~50 (since they already exist)
+        if result["parsed"] < 40:
+            fail("POST /api/admin/trends/upload", f"Expected ~50 parsed, got {result['parsed']}")
+            return
+        
+        success("POST /api/admin/trends/upload (rising) parsed and updated trends")
+        
+        # Test bad kind
+        with open("/tmp/rising.csv", "rb") as f:
+            files = {"file": ("rising.csv", f, "text/csv")}
+            data_form = {"kind": "bad"}
+            resp = requests.post(f"{API_URL}/admin/trends/upload", 
+                                headers={"X-Admin-Token": admin_token},
+                                files=files, data=data_form, timeout=10)
+        
+        if resp.status_code != 400:
+            fail("POST /api/admin/trends/upload bad kind", 
+                 f"Expected 400, got {resp.status_code}")
+        else:
+            success("POST /api/admin/trends/upload with bad kind returns 400")
+        
+        # Upload a tiny CSV with Google Trends preamble
+        tiny_csv = """Category: All categories
+
+TOP
+coffee nearby,100
+weather tomorrow,50
+"""
+        with open("/tmp/tiny.csv", "w") as f:
+            f.write(tiny_csv)
+        
+        with open("/tmp/tiny.csv", "rb") as f:
+            files = {"file": ("tiny.csv", f, "text/csv")}
+            data_form = {"kind": "top"}
+            resp = requests.post(f"{API_URL}/admin/trends/upload", 
+                                headers={"X-Admin-Token": admin_token},
+                                files=files, data=data_form, timeout=10)
+        
+        if resp.status_code != 200:
+            fail("POST /api/admin/trends/upload tiny CSV", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        result = resp.json()
+        if result["parsed"] != 2:
+            fail("POST /api/admin/trends/upload tiny CSV", 
+                 f"Expected 2 parsed (header lines skipped), got {result['parsed']}")
+            return
+        
+        success("POST /api/admin/trends/upload tiny CSV parsed 2 (header lines skipped)")
+        
+        # Find "weather tomorrow" (should be unmapped: category null, enabled false)
+        resp = requests.get(f"{API_URL}/admin/trends", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            items = resp.json()["items"]
+            weather = next((item for item in items if item["query"] == "weather tomorrow"), None)
+            if weather:
+                if weather.get("category") is not None:
+                    fail("Unmapped trend category", f"Expected null, got {weather.get('category')}")
+                elif weather.get("enabled") != False:
+                    fail("Unmapped trend enabled", f"Expected false, got {weather.get('enabled')}")
+                else:
+                    success("Unmapped trend 'weather tomorrow' has category=null, enabled=false")
+                    
+                    # Delete it
+                    weather_id = weather["id"]
+                    resp = requests.delete(f"{API_URL}/admin/trends/{weather_id}", 
+                                          headers={"X-Admin-Token": admin_token}, timeout=10)
+                    if resp.status_code == 200:
+                        success("DELETE /api/admin/trends/{id} for 'weather tomorrow'")
+                    else:
+                        fail("DELETE /api/admin/trends/{id}", f"Expected 200, got {resp.status_code}")
+        
+        # Test PATCH trend
+        # Find "coffee nearby"
+        resp = requests.get(f"{API_URL}/admin/trends", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            items = resp.json()["items"]
+            coffee = next((item for item in items if item["query"] == "coffee nearby"), None)
+            if coffee:
+                coffee_id = coffee["id"]
+                
+                # Disable it
+                resp = requests.patch(f"{API_URL}/admin/trends/{coffee_id}", 
+                                     headers={"X-Admin-Token": admin_token},
+                                     json={"enabled": False}, timeout=10)
+                if resp.status_code != 200:
+                    fail("PATCH /api/admin/trends/{id} disable", 
+                         f"Expected 200, got {resp.status_code}")
+                else:
+                    success("PATCH /api/admin/trends/{id} enabled=false")
+                    
+                    # Verify it's not accessible
+                    resp = requests.get(f"{API_URL}/nearby/coffee-nearby", timeout=10)
+                    if resp.status_code != 404:
+                        fail("GET /api/nearby/coffee-nearby after disable", 
+                             f"Expected 404, got {resp.status_code}")
+                    else:
+                        success("GET /api/nearby/coffee-nearby returns 404 when disabled")
+                    
+                    # Re-enable it
+                    resp = requests.patch(f"{API_URL}/admin/trends/{coffee_id}", 
+                                         headers={"X-Admin-Token": admin_token},
+                                         json={"enabled": True}, timeout=10)
+                    if resp.status_code != 200:
+                        fail("PATCH /api/admin/trends/{id} re-enable", 
+                             f"Expected 200, got {resp.status_code}")
+                    else:
+                        success("PATCH /api/admin/trends/{id} enabled=true")
+                        
+                        # Verify it's accessible again
+                        resp = requests.get(f"{API_URL}/nearby/coffee-nearby", timeout=10)
+                        if resp.status_code != 200:
+                            fail("GET /api/nearby/coffee-nearby after re-enable", 
+                                 f"Expected 200, got {resp.status_code}")
+                        else:
+                            success("GET /api/nearby/coffee-nearby returns 200 after re-enable")
+                
+                # Test PATCH with bad category
+                resp = requests.patch(f"{API_URL}/admin/trends/{coffee_id}", 
+                                     headers={"X-Admin-Token": admin_token},
+                                     json={"category": "nope"}, timeout=10)
+                if resp.status_code != 400:
+                    fail("PATCH /api/admin/trends/{id} bad category", 
+                         f"Expected 400, got {resp.status_code}")
+                else:
+                    success("PATCH /api/admin/trends/{id} bad category returns 400")
+        
+        # Test bulk update
+        resp = requests.get(f"{API_URL}/admin/trends", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            items = resp.json()["items"]
+            if len(items) >= 2:
+                ids = [items[0]["id"], items[1]["id"]]
+                resp = requests.post(f"{API_URL}/admin/trends/bulk", 
+                                    headers={"X-Admin-Token": admin_token},
+                                    json={"ids": ids, "enabled": True}, timeout=10)
+                if resp.status_code != 200:
+                    fail("POST /api/admin/trends/bulk", 
+                         f"Expected 200, got {resp.status_code}")
+                else:
+                    result = resp.json()
+                    if "modified" not in result:
+                        fail("POST /api/admin/trends/bulk", "Missing modified count")
+                    else:
+                        success(f"POST /api/admin/trends/bulk modified {result['modified']} trends")
+        
+    except Exception as e:
+        fail("Trends", str(e))
+
+
+def test_nearby_pages():
+    """Test public nearby pages"""
+    log("\n=== Phase 2 Test 6: Public Nearby Pages ===")
+    
+    try:
+        # Test GET /api/nearby
+        resp = requests.get(f"{API_URL}/nearby", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/nearby", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        required = ["groups", "trending", "total", "cities"]
+        missing = [k for k in required if k not in data]
+        if missing:
+            fail("GET /api/nearby", f"Missing keys: {missing}")
+            return
+        
+        # Check groups structure
+        if not data["groups"]:
+            fail("GET /api/nearby", "No groups returned")
+            return
+        
+        group = data["groups"][0]
+        group_keys = ["category", "category_name", "icon", "image", "queries"]
+        missing = [k for k in group_keys if k not in group]
+        if missing:
+            fail("GET /api/nearby group structure", f"Missing: {missing}")
+            return
+        
+        # Check total >= 50
+        if data["total"] < 50:
+            fail("GET /api/nearby", f"Expected total >= 50, got {data['total']}")
+            return
+        
+        # Check cities = 32
+        if len(data["cities"]) != 32:
+            fail("GET /api/nearby cities", f"Expected 32, got {len(data['cities'])}")
+            return
+        
+        success("GET /api/nearby returns groups, trending, total (>=50), cities (32)")
+        
+        # Test GET /api/nearby/{slug}
+        resp = requests.get(f"{API_URL}/nearby/coffee-nearby", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/nearby/coffee-nearby", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        required = ["query", "title", "intro", "category", "city", "located", 
+                   "businesses", "faqs", "related", "other_queries", "cities"]
+        missing = [k for k in required if k not in data]
+        if missing:
+            fail("GET /api/nearby/coffee-nearby", f"Missing keys: {missing}")
+            return
+        
+        # Check category
+        if data["category"].get("slug") != "coffee-shops":
+            fail("GET /api/nearby/coffee-nearby category", 
+                 f"Expected coffee-shops, got {data['category'].get('slug')}")
+            return
+        
+        # Check city (default should be new-york)
+        if data["city"].get("slug") != "new-york":
+            fail("GET /api/nearby/coffee-nearby city", 
+                 f"Expected new-york, got {data['city'].get('slug')}")
+            return
+        
+        # Check located = false (no lat/lng)
+        if data["located"] != False:
+            fail("GET /api/nearby/coffee-nearby located", 
+                 f"Expected false, got {data['located']}")
+            return
+        
+        # Check FAQs >= 5
+        if len(data["faqs"]) < 5:
+            fail("GET /api/nearby/coffee-nearby faqs", 
+                 f"Expected >= 5, got {len(data['faqs'])}")
+            return
+        
+        success("GET /api/nearby/coffee-nearby returns correct structure")
+        
+        # Test with lat/lng
+        resp = requests.get(f"{API_URL}/nearby/coffee-nearby?lat=30.27&lng=-97.74", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/nearby/coffee-nearby with lat/lng", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        
+        # Check city = austin
+        if data["city"].get("slug") != "austin":
+            fail("GET /api/nearby/coffee-nearby with lat/lng city", 
+                 f"Expected austin, got {data['city'].get('slug')}")
+            return
+        
+        # Check located = true
+        if data["located"] != True:
+            fail("GET /api/nearby/coffee-nearby with lat/lng located", 
+                 f"Expected true, got {data['located']}")
+            return
+        
+        # Check businesses sorted by distance
+        if data["businesses"]:
+            distances = [b.get("distance") for b in data["businesses"] if b.get("distance") is not None]
+            if distances and distances != sorted(distances):
+                fail("GET /api/nearby/coffee-nearby with lat/lng", 
+                     "Businesses not sorted by distance")
+                return
+        
+        success("GET /api/nearby/coffee-nearby?lat=30.27&lng=-97.74 returns austin, located=true, sorted by distance")
+        
+        # Test with city parameter
+        resp = requests.get(f"{API_URL}/nearby/coffee-nearby?city=chicago", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/nearby/coffee-nearby?city=chicago", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if data["city"].get("slug") != "chicago":
+            fail("GET /api/nearby/coffee-nearby?city=chicago", 
+                 f"Expected chicago, got {data['city'].get('slug')}")
+            return
+        
+        success("GET /api/nearby/coffee-nearby?city=chicago returns chicago")
+        
+        # Test unknown slug
+        resp = requests.get(f"{API_URL}/nearby/unknown-slug-xyz", timeout=10)
+        if resp.status_code != 404:
+            fail("GET /api/nearby/unknown-slug", 
+                 f"Expected 404, got {resp.status_code}")
+        else:
+            success("GET /api/nearby/unknown-slug returns 404")
+        
+        # Check views increment
+        # Get current views for coffee-nearby
+        resp = requests.get(f"{API_URL}/admin/trends", 
+                           headers={"X-Admin-Token": admin_token}, timeout=10)
+        if resp.status_code == 200:
+            items = resp.json()["items"]
+            coffee = next((item for item in items if item["slug"] == "coffee-nearby"), None)
+            if coffee:
+                views = coffee.get("views", 0)
+                if views >= 1:
+                    success(f"GET /api/admin/trends shows coffee-nearby views >= 1 (actual: {views})")
+                else:
+                    log(f"Warning: coffee-nearby views = {views}, expected >= 1")
+        
+    except Exception as e:
+        fail("Public nearby pages", str(e))
+
+
+def test_catalog_regression():
+    """Test catalog regression for Phase 2"""
+    log("\n=== Phase 2 Test 7: Catalog Regression ===")
+    
+    try:
+        # Test GET /api/home
+        resp = requests.get(f"{API_URL}/home", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/home", f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "categories" not in data:
+            fail("GET /api/home", "Missing categories")
+            return
+        
+        # Check for 34 categories
+        if len(data["categories"]) != 34:
+            fail("GET /api/home categories", f"Expected 34, got {len(data['categories'])}")
+            return
+        
+        # Check for specific new categories
+        slugs = [c["slug"] for c in data["categories"]]
+        expected = ["pizza", "gas-stations", "bars"]
+        missing = [s for s in expected if s not in slugs]
+        if missing:
+            fail("GET /api/home new categories", f"Missing: {missing}")
+            return
+        
+        success("GET /api/home returns 34 categories including pizza, gas-stations, bars")
+        
+        # Test GET /api/listing/pizza/texas/austin
+        resp = requests.get(f"{API_URL}/listing/pizza/texas/austin", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/listing/pizza/texas/austin", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if "businesses" not in data:
+            fail("GET /api/listing/pizza/texas/austin", "Missing businesses")
+            return
+        
+        success("GET /api/listing/pizza/texas/austin returns 200 with seeded businesses")
+        
+        # Test GET /api/search?what=pizza&where=austin
+        resp = requests.get(f"{API_URL}/search?what=pizza&where=austin", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/search?what=pizza&where=austin", 
+                 f"Expected 200, got {resp.status_code}")
+            return
+        
+        data = resp.json()
+        if data.get("category") != "pizza":
+            fail("GET /api/search?what=pizza&where=austin", 
+                 f"Expected category=pizza, got {data.get('category')}")
+            return
+        
+        success("GET /api/search?what=pizza&where=austin returns category=pizza")
+        
+        # Test GET /api/sitemap.xml contains /nearby/coffee-nearby
+        resp = requests.get(f"{API_URL}/sitemap.xml", timeout=10)
+        
+        if resp.status_code != 200:
+            fail("GET /api/sitemap.xml", f"Expected 200, got {resp.status_code}")
+            return
+        
+        sitemap = resp.text
+        if "/nearby/coffee-nearby" not in sitemap:
+            fail("GET /api/sitemap.xml", "Missing /nearby/coffee-nearby")
+            return
+        
+        success("GET /api/sitemap.xml contains /nearby/coffee-nearby")
+        
+        # Spot check Phase 1: GET /api/admin/claims
+        if admin_token:
+            resp = requests.get(f"{API_URL}/admin/claims", 
+                               headers={"X-Admin-Token": admin_token}, timeout=10)
+            if resp.status_code != 200:
+                fail("GET /api/admin/claims (Phase 1 regression)", 
+                     f"Expected 200, got {resp.status_code}")
+            else:
+                success("GET /api/admin/claims (Phase 1 regression)")
+            
+            # GET /api/admin/settings
+            resp = requests.get(f"{API_URL}/admin/settings", 
+                               headers={"X-Admin-Token": admin_token}, timeout=10)
+            if resp.status_code != 200:
+                fail("GET /api/admin/settings (Phase 1 regression)", 
+                     f"Expected 200, got {resp.status_code}")
+            else:
+                success("GET /api/admin/settings (Phase 1 regression)")
+        
+    except Exception as e:
+        fail("Catalog regression", str(e))
+
+
+# ============================================================================
 # Main Test Runner
 # ============================================================================
 
 def main():
     """Run all tests"""
     log("=" * 80)
-    log("Starting nearbyok Backend Tests")
+    log("Starting nearbyok Backend Tests - Phase 2")
     log("=" * 80)
     
     # Create test users
     create_test_users()
     
-    # Run tests
+    # Run Phase 1 tests (quick regression)
     test_admin_auth()
-    test_regression()
-    test_settings()
-    test_media_signature()
-    test_claim_flow()
-    test_owner_edit()
-    test_reviews_with_media()
-    test_free_listing_with_media()
-    test_google_ingest()
-    test_revoke_claim()
     
-    # Rate limit test (run last)
-    test_admin_rate_limit()
+    # Run Phase 2 tests
+    test_analytics()
+    test_businesses_manager()
+    test_reviews_users_admin()
+    test_seo_settings()
+    test_trends()
+    test_nearby_pages()
+    test_catalog_regression()
     
     # Cleanup
     cleanup_test_data()

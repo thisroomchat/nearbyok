@@ -1,32 +1,54 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { getSeoOverride } from "@/lib/nbk";
+import { useSite } from "@/context/SiteContext";
 
-// Lightweight SEO helper: sets title, meta, canonical + injects JSON-LD.
-export const Seo = ({ title, description, canonical, jsonLd }) => {
+const overrideCache = new Map();
+
+// SEO helper: title, meta, canonical, OG/Twitter, robots + JSON-LD. Per-path admin overrides win over page defaults.
+export const Seo = ({ title, description, canonical, jsonLd, image, noindex = false }) => {
+  const { pathname } = useLocation();
+  const { site } = useSite();
+  const [ov, setOv] = useState(() => overrideCache.get(pathname) ?? null);
+
   useEffect(() => {
-    if (title) document.title = title;
+    const key = pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    if (overrideCache.has(key)) { setOv(overrideCache.get(key)); return; }
+    getSeoOverride(key).then((r) => { overrideCache.set(key, r.override || null); setOv(r.override || null); }).catch(() => setOv(null));
+  }, [pathname]);
+
+  const finalTitle = ov?.title || title;
+  const finalDesc = ov?.description || description || site.description;
+  const finalCanonical = ov?.canonical || canonical;
+  const finalImage = ov?.og_image || image || site.og_image_url;
+  const finalNoindex = ov?.noindex || noindex;
+  const jsonKey = JSON.stringify(jsonLd || null);
+
+  useEffect(() => {
+    if (finalTitle) document.title = finalTitle;
     const setMeta = (attr, key, content) => {
-      if (!content) return;
       let el = document.head.querySelector(`meta[${attr}="${key}"]`);
-      if (!el) {
-        el = document.createElement("meta");
-        el.setAttribute(attr, key);
-        document.head.appendChild(el);
-      }
+      if (!content) { if (el) el.remove(); return; }
+      if (!el) { el = document.createElement("meta"); el.setAttribute(attr, key); document.head.appendChild(el); }
       el.setAttribute("content", content);
     };
-    setMeta("name", "description", description);
-    setMeta("property", "og:title", title);
-    setMeta("property", "og:description", description);
+    setMeta("name", "description", finalDesc);
+    setMeta("name", "keywords", ov?.keywords || site.keywords);
+    setMeta("name", "robots", finalNoindex ? "noindex, nofollow" : "index, follow, max-image-preview:large");
+    setMeta("property", "og:site_name", site.name || "nearbyok");
+    setMeta("property", "og:title", finalTitle);
+    setMeta("property", "og:description", finalDesc);
     setMeta("property", "og:type", "website");
-    setMeta("name", "twitter:card", "summary_large_image");
+    setMeta("property", "og:url", finalCanonical);
+    setMeta("property", "og:image", finalImage);
+    setMeta("name", "twitter:card", finalImage ? "summary_large_image" : "summary");
+    setMeta("name", "twitter:title", finalTitle);
+    setMeta("name", "twitter:description", finalDesc);
+    setMeta("name", "twitter:image", finalImage);
 
     let link = document.head.querySelector('link[rel="canonical"]');
-    if (!link) {
-      link = document.createElement("link");
-      link.setAttribute("rel", "canonical");
-      document.head.appendChild(link);
-    }
-    if (canonical) link.setAttribute("href", canonical);
+    if (!link) { link = document.createElement("link"); link.setAttribute("rel", "canonical"); document.head.appendChild(link); }
+    if (finalCanonical) link.setAttribute("href", finalCanonical);
 
     const scripts = [];
     const blocks = Array.isArray(jsonLd) ? jsonLd : jsonLd ? [jsonLd] : [];
@@ -39,7 +61,8 @@ export const Seo = ({ title, description, canonical, jsonLd }) => {
       scripts.push(s);
     });
     return () => scripts.forEach((s) => s.remove());
-  }, [title, description, canonical, JSON.stringify(jsonLd)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalTitle, finalDesc, finalCanonical, finalImage, finalNoindex, jsonKey, site.name, site.keywords, ov?.keywords]);
 
   return null;
 };

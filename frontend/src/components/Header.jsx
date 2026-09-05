@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Search, MapPin, Menu, PlusCircle, X, Bookmark, Building2, LogOut, LogIn, Star } from "lucide-react";
+import { Search, MapPin, Menu, PlusCircle, X, Bookmark, Building2, LogOut, LogIn, Star, Navigation } from "lucide-react";
 import { doSearch } from "@/lib/nbk";
 import { useAuth } from "@/context/AuthContext";
 
@@ -86,6 +86,7 @@ export const Header = ({ compact = false }) => {
           )}
 
           <div className="ml-auto flex items-center gap-3">
+            <Link to="/nearby" data-testid="header-nearby-link" className="hidden lg:flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-2 py-2 transition-colors"><Navigation className="w-4 h-4 text-orange-500" /> Nearby</Link>
             <Link
               to="/list-your-business"
               data-testid="free-listing-cta"

@@ -19,7 +19,9 @@ from pydantic import BaseModel, Field, BeforeValidator, ConfigDict
 from db import client, db
 from auth import router as auth_router, get_current_user, optional_user, require_admin, User
 from catalog_extra import EXTRA_CATEGORIES, EXTRA_CITIES
-from owner import build_router as build_owner_router, Media, clean_media, EDITABLE_FIELDS as OWNER_EDITABLE
+from owner import build_router as build_owner_router, Media, clean_media, EDITABLE_FIELDS as OWNER_EDITABLE, get_settings
+from admin_extra import build_router as build_console_router
+from catalog_trends import TREND_CATEGORIES
 
 GOOGLE_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 
@@ -87,6 +89,7 @@ CATEGORIES = [
      "services": ["Climate Controlled Units", "24/7 Access", "Drive-Up Storage", "Vehicle Storage", "Business Storage", "Moving Supplies"]},
 ]
 CATEGORIES += EXTRA_CATEGORIES
+CATEGORIES += TREND_CATEGORIES
 CAT_BY_SLUG = {c["slug"]: c for c in CATEGORIES}
 
 CITIES = [
@@ -887,6 +890,11 @@ async def sitemap():
         c = CITY_BY_SLUG.get(d["city"])
         if c:
             urls.append(f"{base}/{d['category']}/{c['state']}/{d['city']}/{d['slug']}")
+    trends = await db.trend_queries.find({"enabled": True, "category": {"$ne": None}}, {"_id": 0, "slug": 1}).to_list(2000)
+    if trends:
+        urls.append(f"{base}/nearby")
+        urls += [f"{base}/nearby/{t['slug']}" for t in trends]
+    urls.append(f"{base}/list-your-business")
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     body += "\n".join(f"  <url><loc>{u}</loc></url>" for u in urls)
     body += "\n</urlset>"
@@ -895,12 +903,20 @@ async def sitemap():
 
 @app.get("/api/robots.txt")
 async def robots():
-    return PlainTextResponse("User-agent: *\nAllow: /\nSitemap: https://nearbyok.com/api/sitemap.xml\n")
+    s = await get_settings()
+    extra = (s.get("site") or {}).get("robots_extra") or ""
+    body = "User-agent: *\nAllow: /\nDisallow: /account\nDisallow: /api/\nAllow: /api/sitemap.xml\n"
+    if extra.strip():
+        body += extra.strip() + "\n"
+    body += "Sitemap: https://nearbyok.com/api/sitemap.xml\n"
+    return PlainTextResponse(body)
 
 
 app.include_router(api)
 app.include_router(auth_router)
 app.include_router(build_owner_router(format_business, with_state, CAT_BY_SLUG, CITY_BY_SLUG))
+app.include_router(build_console_router({"CATEGORIES": CATEGORIES, "CITIES": CITIES, "CAT_BY_SLUG": CAT_BY_SLUG, "CITY_BY_SLUG": CITY_BY_SLUG,
+                                         "format_business": format_business, "haversine": haversine, "LIVE": LIVE, "gen_faqs": gen_faqs}))
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
