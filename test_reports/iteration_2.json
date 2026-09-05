@@ -1,0 +1,28 @@
+{
+  "summary": "Full iteration-2 test of nearbyok.com (auth, admin, favorites, reviews, owner submissions, 20x32 matrix). 25/25 pytest backend tests PASS. Frontend flows verified end-to-end: home (20 categories, 32 cities, Free-Listing + Login header), admin login (wrong pwd rejected, correct pwd loads dashboard with all stat cards, top-businesses-table, 20-row ingest matrix, submissions list), account page (cookie-based login shows account-user-name + saved/listings/reviews tabs), business detail (google-source-badge, reviews-list, save toggle, review submission), /list-your-business (submitted new business → listing-success → view page shows unverified-badge), matrix pages /hvac/colorado/denver + /bakeries/massachusetts/boston render seed cards, logged-out save-btn correctly redirects to auth.emergentagent.com. Google ingest background job actively running (95/639 done at test time).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Ingest & ListBusiness form", "issues": ["React hydration warning: <span> injected inside <option> elements (from a Visual-Editor wrapper on dynamic array items). Not user-visible but pollutes console. Wrap dynamic option label in {c.name} without span, or exclude <option> children from ve wrapper."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 884 lines — well over the 700-line split threshold. Split into modules: routes/admin, routes/owner_submissions, routes/user, google_ingest, seed.",
+    "Still using deprecated @app.on_event startup/shutdown. Migrate to lifespan context manager.",
+    "Frontend hydration warning: <span> children rendered inside <option> tags (AdminIngest, ListBusiness). React 18/19 flags this and it may become an error in future versions.",
+    "auth.py stores sessions with expires_at as ISO string — get_current_user has to reparse it. Consider storing as native BSON date for indexable expiry queries + TTL index.",
+    "No TTL index on user_sessions.expires_at; expired sessions accumulate forever."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100%"},
+  "test_credentials": "Admin: nearbyok-admin-2026 (header X-Admin-Key or /api/auth/admin-login). Test user created directly in Mongo per /app/auth_testing.md — cleaned up after test.",
+  "seed_data_creation": "Backend test suite creates its own test user (mongo) per module and cleans up. Frontend test used fe-test-user-1 / fe_test_session_1 and was cleaned up post-run. One submitted business ('FE Test Biz' in denver/plumbers) was created and left as an approved submission; it was NOT cleaned up but is prefixed 'FE Test' — main agent may wish to purge.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend suite at /app/backend/tests/backend_test.py (25 tests, ~6s runtime). BASE_URL from REACT_APP_BACKEND_URL. Requires local mongo access (MongoClient mongodb://localhost:27017, db test_database) to seed test users. Admin key nearbyok-admin-2026. Cleanup: mongosh -e \"use('test_database'); db.users.deleteMany({email:/test\\\\.user\\\\./}); db.user_sessions.deleteMany({session_token:/test_session/}); db.businesses.deleteMany({name:/FE Test/})\". Do NOT trigger any /api/admin/ingest* endpoint from tests — a live Google-Places ingestion job is running in background.",
+  "rca of the issue": "N/A — no failures"
+}

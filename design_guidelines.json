@@ -1,0 +1,203 @@
+{
+  "app_identity": {
+    "name": "nearbyok.com",
+    "type": "SEO Local Business Directory / Programmatic Directory Marketplace",
+    "tagline": "Find Local Businesses, Services & Stores Near You in US Cities",
+    "target_market": "US Cities & Metropolitan Areas",
+    "architecture_model": "Programmatic SEO Matrix with 10,000+ Scalable Directory Pages"
+  },
+  "design_archetype": {
+    "name": "The SEO-Rich Directory Engine (JustDial x Swiss Precision)",
+    "description": "High-density, utility-driven local directory layout optimized for maximum organic crawlability, trust conversion, immediate lead actions (Show Number, WhatsApp CTA), and rich local search signals.",
+    "theme_mode": "Light mode primary with high contrast borders, clean card elevation, crisp typography hierarchy, and selective dark elements for maps & header navigation."
+  },
+  "typography": {
+    "font_family_heading": "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+    "font_family_body": "'Inter', system-ui, -apple-system, sans-serif",
+    "font_family_mono": "'JetBrains Mono', monospace",
+    "scale": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-normal",
+      "h4": "text-lg sm:text-xl font-semibold",
+      "body": "text-sm sm:text-base leading-relaxed text-slate-700",
+      "caption": "text-xs font-medium text-slate-500",
+      "tag_chip": "text-xs font-medium px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-amber-50 hover:text-amber-800 transition-colors"
+    }
+  },
+  "colors": {
+    "primary": {
+      "default": "#0F172A",
+      "hover": "#1E293B",
+      "foreground": "#FFFFFF"
+    },
+    "brand_accent": {
+      "default": "#2563EB",
+      "hover": "#1D4ED8",
+      "light": "#EFF6FF"
+    },
+    "cta_call": {
+      "default": "#EA580C",
+      "hover": "#C2410C",
+      "text": "#FFFFFF",
+      "light_bg": "#FFF7ED"
+    },
+    "cta_whatsapp": {
+      "default": "#16A34A",
+      "hover": "#15803D",
+      "text": "#FFFFFF",
+      "light_bg": "#F0FDF4"
+    },
+    "rating_badge": {
+      "star_yellow": "#EAB308",
+      "bg_green": "#15803D",
+      "bg_green_light": "#DCFCE7",
+      "text_green": "#14532D"
+    },
+    "surface": {
+      "background": "#F8FAFC",
+      "card": "#FFFFFF",
+      "header": "#0F172A",
+      "border": "#E2E8F0",
+      "border_dark": "#CBD5E1"
+    },
+    "monetization": {
+      "sponsored_badge": "#FEF3C7",
+      "sponsored_text": "#92400E",
+      "ad_placeholder_bg": "#F1F5F9",
+      "ad_placeholder_border": "#CBD5E1"
+    }
+  },
+  "url_structure_and_routes": {
+    "home_page": "/",
+    "category_state_city_listing": "/:category/:state/:city",
+    "business_detail": "/:category/:state/:city/:business_slug",
+    "popular_category": "/category/:category",
+    "popular_city": "/city/:state/:city"
+  },
+  "layout_and_architecture": {
+    "header": {
+      "style": "Sticky z-50 bg-slate-900 text-white border-b border-slate-800 shadow-sm",
+      "elements": [
+        "Brand Logo (nearbyok.com)",
+        "Location selector modal dropdown (US City / Zip code)",
+        "Global Search Bar (Category / Business name)",
+        "Free Business Listing CTA button",
+        "Mobile hamburger menu"
+      ]
+    },
+    "breadcrumbs": {
+      "style": "py-3 px-4 bg-slate-100 text-xs text-slate-600 border-b border-slate-200 overflow-x-auto whitespace-nowrap",
+      "hierarchy": "Home > State > City > Category > Business Name"
+    },
+    "pages": {
+      "home_page": {
+        "sections": [
+          "Hero Search Container with double input (What: Category/Service, Where: City/State/Zip)",
+          "Popular Quick Category Grid (Plumbers, Electricians, Coffee Shops, Dentists, Auto Repair, Restaurants, Supermarkets, Locksmiths)",
+          "Featured US Cities Grid (New York, Los Angeles, Chicago, Houston, Phoenix, Philadelphia, San Antonio, San Diego)",
+          "Programmatic SEO Directory Matrix (Browse by State & Top Categories)",
+          "How nearbyok works for users & local businesses",
+          "Pay-per-Call & Featured Listing Banner for Business Owners"
+        ]
+      },
+      "listing_page": {
+        "layout": "Two column split view (Desktop: 65% listings feed + 35% sticky Leaflet Map; Mobile: List view with toggle Map modal)",
+        "filter_bar": "Distance radius, Minimum Rating (4.0+), Open Now toggle, Verified business filter, Price range ($ - $$$$)",
+        "business_card": {
+          "border": "border border-slate-200 hover:border-blue-500 rounded-lg p-5 bg-white shadow-sm transition-all hover:shadow-md",
+          "header": "Business title, Verified checkmark badge, Sponsored tag (if ad listing)",
+          "rating_row": "Rating green pill (e.g., 4.8 ★), Total Ratings Count (e.g., 142 ratings), Distance from user/center (e.g., 1.2 miles away)",
+          "meta_row": "Category, Address snippet, Hours (Open Now / Closed - Closes 9 PM)",
+          "cta_buttons": [
+            "Show Number CTA (Click to reveal phone number with call tracking modal)",
+            "WhatsApp CTA (Direct message lead)",
+            "Directions button (Opens Leaflet map pin / Google Maps link)"
+          ]
+        }
+      },
+      "business_detail_page": {
+        "seo_rich_structure_justdial_replica": [
+          "1. Business Hero Header: Title, Claimed/Verified badge, Green Star Rating pill, total reviews count, years in business, address, distance, quick action toolbar (Save, Share, Rate, Report)",
+          "2. Primary CTA Cluster: Large 'Show Number' amber CTA button + Green 'WhatsApp Chat' CTA + 'Get Directions' button + 'Send Enquiry' lead form trigger",
+          "3. Media & Overview Banner: Storefront image gallery carousel, operational hours table, exact address with Leaflet Map pin widget",
+          "4. Products & Services Offered: Grid/List of service items with pricing, description tags, and inquiry CTA per item",
+          "5. FAQ Accordion (Programmatic SEO schema): 4-6 frequently asked questions auto-generated with schema microdata",
+          "6. 'People found [Business] by searching for' Tag Chips: 10-20 programmatic long-tail keyword chips linking to related query pages",
+          "7. Related Searches Links Grid: Interlinked SEO keyword search links (e.g., 'Best emergency plumber in Brooklyn NY')",
+          "8. 'Supermarkets & Businesses in nearby areas': Local proximity links to nearby neighborhood listings",
+          "9. Explore More Similar Listings: Carousel/Grid of similar businesses in the same city",
+          "10. Businesses in Popular US Cities: Matrix of popular city links for programmatic link juice flow",
+          "11. Featured Links & Popular Categories Tabs: Accordion tabbed directory for state-wide category navigation"
+        ]
+      }
+    }
+  },
+  "component_guidelines": {
+    "map_integration": {
+      "library": "Leaflet.js / OpenStreetMap via react-leaflet or standard Leaflet web integration",
+      "style": "Clean tile layer (CartoDB Positron or standard OpenStreetMap), custom marker pins with category icons, popups on marker click with mini business card details and 'Directions' button"
+    },
+    "show_number_cta": {
+      "behavior": "Initial state displays '+1 (8XX) XXX-XXXX (Show Number)'. Clicking reveals full phone number, triggers pay-per-call tracking event, opens telephone modal or tel link, and increments call counter",
+      "style": "bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-3 rounded-md flex items-center justify-center gap-2 shadow-sm"
+    },
+    "whatsapp_cta": {
+      "behavior": "Pre-populates message: 'Hi, I found your listing on nearbyok.com. I would like to inquire about your services.' and opens WhatsApp Web / App",
+      "style": "bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-3 rounded-md flex items-center justify-center gap-2 shadow-sm"
+    },
+    "search_bar": {
+      "style": "Flex box / grid dual input container with high contrast search button",
+      "input_what": "Search Category, Service or Business (e.g. Plumber, Italian Restaurant)",
+      "input_where": "City, State or Zip Code (e.g. Austin, TX or 78701)"
+    }
+  },
+  "image_urls": {
+    "storefront_coffee": "https://images.unsplash.com/photo-1469631423273-6995642a6a40?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "coffee_sign": "https://images.unsplash.com/photo-1777846741238-0a6bf7341441?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "barista_counter": "https://images.unsplash.com/photo-1594402919317-9e67dca0a305?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "nyc_skyline": "https://images.unsplash.com/photo-1485871981521-5b1fd3805eee?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "brooklyn_bridge": "https://images.unsplash.com/photo-1496588152823-86ff7695e68f?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "auto_repair_shop": "https://images.pexels.com/photos/8387509/pexels-photo-8387509.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "small_store_interior": "https://images.unsplash.com/photo-1759860002165-f059bfcee759?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "testing_guidelines": {
+    "data_testid_rules": "All key interactive elements MUST include data-testid attribute in kebab-case format.",
+    "required_test_ids": [
+      "global-search-input-what",
+      "global-search-input-where",
+      "global-search-submit-button",
+      "location-selector-trigger",
+      "business-card-show-number-button",
+      "business-card-whatsapp-button",
+      "business-card-title-link",
+      "business-detail-show-number-button",
+      "business-detail-whatsapp-button",
+      "business-detail-directions-button",
+      "business-detail-enquiry-button",
+      "filter-rating-select",
+      "filter-open-now-checkbox",
+      "filter-distance-slider",
+      "leaflet-map-container",
+      "faq-accordion-item",
+      "searched-for-chip-link",
+      "related-search-link",
+      "popular-cities-matrix-link",
+      "popular-categories-tab"
+    ]
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid AI slop: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) where appropriate.",
+    "You MUST NOT apply universal transition. Eg: transition: all. Always add transitions for specific interactive elements like button, input excluding transforms.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons. Use lucide-react icons exclusively.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing."
+  ]
+}

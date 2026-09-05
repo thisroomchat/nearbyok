@@ -1,0 +1,17 @@
+.App {
+  min-height: 100vh;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+
+.nbk-pin {
+  background: transparent;
+  border: none;
+}
+
+::selection {
+  background: #fed7aa;
+  color: #7c2d12;
+}
