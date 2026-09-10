@@ -60,3 +60,9 @@ Programmatic SEO local business directory (JustDial/Yelp style) for US cities. B
 ## Backlog (from user, Sep 2026)
 - Phase 2: advanced console (dashboard charts, businesses manager, users, leads CSV), SEO settings (favicon/OG/GA/AdSense/robots, per-page), Google Trends CSV -> nearby intent pages + new categories (pizza, gas stations, bars, breweries, thrift, liquor, diners, ice cream, breakfast, malls, post office, DMV...).
 - Phase 3: monthly auto-refresh scheduler + per-city refresh + location dedupe; search autocomplete (category/business/city/ZIP); black-screen flash audit.
+
+## Jun 2026 — AI Trip Planner (Phase 3)
+- Backend `/app/backend/trip.py`: `GET /api/trip/meta` (transports, interests, popular routes), `POST /api/trip/plan` (Gemini AI itinerary; model fallback chain for 503/rate limits — DO NOT remove). Google Geocoding + Places for stops. Directions API blocked on user key (403) → straight-line polylines on Leaflet map (workaround).
+- Frontend: `/trip-planner` (TripPlanner.jsx), TripResult.jsx, TripMap.jsx, SEO route pages `/trip/:slug` (TripRoute.jsx). Header nav link added.
+- Tested: backend 47/47 (iteration test in test_result.md). Frontend: user chose to verify manually (no automated frontend test run).
+- Backlog: P1 Share/PDF export of trip plan; P1 enable Directions API in Google Cloud for real road routing; P2 sponsored stops / monetization.
