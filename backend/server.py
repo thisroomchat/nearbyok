@@ -917,6 +917,8 @@ app.include_router(auth_router)
 app.include_router(build_owner_router(format_business, with_state, CAT_BY_SLUG, CITY_BY_SLUG))
 app.include_router(build_console_router({"CATEGORIES": CATEGORIES, "CITIES": CITIES, "CAT_BY_SLUG": CAT_BY_SLUG, "CITY_BY_SLUG": CITY_BY_SLUG,
                                          "format_business": format_business, "haversine": haversine, "LIVE": LIVE, "gen_faqs": gen_faqs}))
+from trip import router as trip_router  # noqa: E402
+app.include_router(trip_router)
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),

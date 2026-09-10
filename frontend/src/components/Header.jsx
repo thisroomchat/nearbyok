@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Search, MapPin, Menu, PlusCircle, X, Bookmark, Building2, LogOut, LogIn, Star, Navigation } from "lucide-react";
+import { Search, MapPin, Menu, PlusCircle, X, Bookmark, Building2, LogOut, LogIn, Star, Navigation, Map } from "lucide-react";
 import { doSearch } from "@/lib/nbk";
 import { useAuth } from "@/context/AuthContext";
 
@@ -87,6 +87,7 @@ export const Header = ({ compact = false }) => {
 
           <div className="ml-auto flex items-center gap-3">
             <Link to="/nearby" data-testid="header-nearby-link" className="hidden lg:flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-2 py-2 transition-colors"><Navigation className="w-4 h-4 text-orange-500" /> Nearby</Link>
+            <Link to="/trip-planner" data-testid="header-trip-link" className="hidden lg:flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-2 py-2 transition-colors"><Map className="w-4 h-4 text-orange-500" /> Trip Planner</Link>
             <Link
               to="/list-your-business"
               data-testid="free-listing-cta"
@@ -116,6 +117,10 @@ export const Header = ({ compact = false }) => {
               <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="City, State or Zip" className="w-full px-2 py-2.5 text-sm text-slate-900 outline-none" />
             </div>
             <button type="submit" className="w-full bg-orange-600 py-2.5 rounded-lg font-semibold text-sm">Search</button>
+            <div className="flex gap-2 pt-1">
+              <Link to="/nearby" onClick={() => setMobileOpen(false)} className="flex-1 text-center bg-white/10 py-2.5 rounded-lg font-semibold text-sm">Nearby</Link>
+              <Link to="/trip-planner" onClick={() => setMobileOpen(false)} data-testid="mobile-trip-link" className="flex-1 text-center bg-white/10 py-2.5 rounded-lg font-semibold text-sm">Trip Planner</Link>
+            </div>
           </form>
         )}
       </div>

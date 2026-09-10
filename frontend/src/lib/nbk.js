@@ -105,6 +105,15 @@ export const getSeoOverride = (path) => api.get("/seo", { params: { path } }).th
 export const getNearbyIndex = () => api.get("/nearby").then((r) => r.data);
 export const getNearbyPage = (slug, params = {}) => api.get(`/nearby/${slug}`, { params }).then((r) => r.data);
 
+// AI Trip Planner
+export const getTripMeta = () => api.get("/trip/meta").then((r) => r.data);
+export const getTripPopular = () => api.get("/trip/popular").then((r) => r.data);
+export const postTripPlan = (body) => api.post("/trip/plan", body).then((r) => r.data);
+export const getTripRoute = (slug) => api.get(`/trip/route/${slug}`).then((r) => r.data);
+export const saveTrip = (id) => api.post("/trip/save", { id }).then((r) => r.data);
+export const getSavedTrips = () => api.get("/trip/saved").then((r) => r.data);
+export const deleteSavedTrip = (id) => api.delete(`/trip/saved/${id}`).then((r) => r.data);
+
 // user features
 export const toggleFavorite = (id) => api.post(`/favorites/${id}`).then((r) => r.data);
 export const getFavorites = () => api.get("/favorites").then((r) => r.data);

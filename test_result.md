@@ -237,6 +237,21 @@ backend:
         agent: "testing"
         comment: "✓ Trends admin: GET /api/admin/trends returns ~89 items with fields (id, query, slug, category, enabled, kinds, top_interest/rising_change_pct, category_name) and 34 categories. POST /api/admin/trends/upload (rising) parsed 50, updated 50. kind=bad returns 400. Tiny CSV with Google Trends preamble parsed 2 (header lines skipped). 'weather tomorrow' unmapped (category null, enabled false), deleted successfully. PATCH /api/admin/trends/{id} enabled=false makes GET /api/nearby/coffee-nearby return 404. PATCH enabled=true restores access (200). PATCH bad category returns 400. POST /api/admin/trends/bulk modified 2 trends. ✓ Public nearby: GET /api/nearby returns groups (category, category_name, icon, image, queries[]), trending[], total (>=50), cities (32). GET /api/nearby/coffee-nearby returns query, title, intro, category{slug:coffee-shops}, city{slug:new-york} (default), located false, businesses[], faqs (>=5), related[], other_queries[], cities. With ?lat=30.27&lng=-97.74 returns city.slug austin, located true, businesses sorted by distance ascending. With ?city=chicago returns city.slug chicago. Unknown slug returns 404. Views incremented (coffee-nearby views >= 1). ✓ Catalog regression: GET /api/home returns 34 categories including pizza, gas-stations, bars. GET /api/listing/pizza/texas/austin returns 200 with seeded businesses. GET /api/search?what=pizza&where=austin returns category pizza. GET /api/sitemap.xml contains /nearby/coffee-nearby. Phase 1 spot check: GET /api/admin/claims and GET /api/admin/settings return 200. All 29 tests passed."
 
+  - task: "AI Trip Planner API (Gemini + Google Places/Geocoding)"
+    implemented: true
+    working: true
+    file: "backend/trip.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New /api/trip/* endpoints. GET /api/trip/meta -> interests(12), transports(6), countries(6), popular_routes(12 with slug). GET /api/trip/popular. POST /api/trip/plan {origin,destination,transport,country,days,budget,travelers,interests[],pace,notes} -> generates a full day-by-day itinerary via Gemini (model gemini-3.8-flash primary with fallback chain 3.7/3.6/flash-latest on 503 overload), enriches with Google Places (real place name/rating/address/maps_url for meal/stop items) + Google Geocoding (map waypoints, drawn as Leaflet polyline). Response {cached,id,slug,plan}. Plan has: title,summary,distance_text,duration_text,best_time_to_visit,total_budget,days[].items[] (time,type,title,location,description,duration,cost,tips,songs[],movies[],moments[]),budget_breakdown[],packing[],tips[],faqs[],map.waypoints[]. IMPORTANT: even for non-stop trips each travel segment gets songs + moments (photo/video/reel/live/view spots). Plans cached in trip_plans by param hash. GET /api/trip/route/{slug} -> SEO canonical plan for popular route (cached in trip_routes; 404 for unknown slug). POST /api/trip/save (auth) + GET /api/trip/saved (auth) + DELETE /api/trip/saved/{id} (auth). Uses user's own GEMINI_API_KEY and GOOGLE_MAPS_API_KEY from backend/.env. NOTE: Directions/Routes API are BLOCKED on the key (only Places + Geocoding enabled) - routing done via geocoded polyline, no Directions needed. Manually verified: /api/trip/meta OK; POST /api/trip/plan for Hoshiarpur->Chandigarh (non-stop bus) returned 200 with 8 timeline items, 5 songs, 7 moments, 10 map waypoints, real places (Indian Coffee House, Rock Garden, Sukhna Lake), budget & FAQs. Needs full agent test (caching, save flow with auth, multi-day route, country=US)."
+      - working: true
+        agent: "testing"
+        comment: "✓ All 47 tests passed. GET /api/trip/meta returns correct structure: 12 interests (key/label/icon), 6 transports, 6 countries (key/currency/symbol), 12 popular_routes with slug format 'chandigarh-to-leh-ladakh'. ✓ GET /api/trip/popular returns routes[] with slugs. ✓ POST /api/trip/plan tested with 3 scenarios: (a) Short non-stop trip Hoshiarpur->Chandigarh (1 day, bus, ₹800): returned 200 in 0.1s (cached), 1 day plan with 10 waypoints, 5 budget items, 4 FAQs, CRITICAL features verified: 3 songs (sample: 'Safar' by Arijit Singh) and 7 moments (sample: 'Green Canopy Window Reel' video) in travel segments. (b) Multi-day India trip Delhi->Manali (3 days, car, ₹15000): returned 200 in 47.1s, 3 day plan with 20 waypoints, 5 songs (sample: 'Safarnama' by Lucky Ali), 8 moments (sample: 'Empty Highway Sunrise' video). (c) US trip Los Angeles->Las Vegas (3 days, car, $1200): returned 200 in 53.4s, 3 day plan with 20 waypoints, 4 songs (sample: 'Hotel California' by Eagles), 9 moments (sample: 'Mountain Highway Ascent' view), correctly uses $ symbol in budget. ✓ Caching: repeat request returned cached:true in 0.3s (<5s). ✓ Auth-protected save flow: POST /api/trip/save without auth returns 401. Created test user session, POST /api/trip/save with auth returns 200 {saved:true}. GET /api/trip/saved returns saved plan. DELETE /api/trip/saved/{id} returns 200 {deleted:true}, verified deletion. POST /api/trip/save with bogus id returns 404. ✓ GET /api/trip/route/chandigarh-to-leh-ladakh returns 200 with 6-day plan in 0.2s (cached). GET /api/trip/route/not-a-real-route returns 404. All endpoints working correctly. Gemini AI integration functional with fallback chain. Google Places/Geocoding enrichment working. Core feature (songs + moments for travel segments) verified across all trip types including non-stop journeys."
+
 frontend:
   - task: "Secret admin console route + username/password login + Claims & Settings tabs"
     implemented: true
@@ -260,15 +275,27 @@ frontend:
       - working: "NA"
         agent: "main"
         comment: "Not yet tested by agent (ask user first)."
+  - task: "AI Trip Planner UI (form, result timeline, map, SEO route pages)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/TripPlanner.jsx, pages/TripRoute.jsx, components/TripResult.jsx, components/TripMap.jsx, components/Header.jsx, App.js, lib/nbk.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New /trip-planner page (form: from/to, transport chips, interests multi-select, country/days/budget/travelers, pace, notes; Create my plan -> POST /api/trip/plan; ~40s loading state; renders TripResult). TripResult shows hero chips, Leaflet route map (TripMap polyline), day tabs, timeline items with songs/movies/moments badges, budget breakdown, packing, tips, FAQ accordion, Save button (login required). SEO route pages /trip/:slug (getTripRoute) with JSON-LD TouristTrip/FAQPage/BreadcrumbList. Header nav 'Trip Planner' link (desktop + mobile). Popular routes grid on planner. Not tested by agent (ask user first)."
 
 metadata:
   created_by: "main_agent"
-  version: "3.0"
-  test_sequence: 3
+  version: "4.1"
+  test_sequence: 5
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "AI Trip Planner API (Gemini + Google Places/Geocoding)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -282,3 +309,7 @@ agent_communication:
     message: "Phase 2 backend added (admin_extra.py). Phase 1 tasks already passed - only regression-spot-check them. Test files for trends upload: /tmp/top.csv and /tmp/rising.csv (3 cols: query,search interest,increase percent). Do NOT run Google ingest this time."
   - agent: "testing"
     message: "Phase 2 backend testing complete. All 3 Phase 2 backend tasks tested and working. Comprehensive test suite executed with 60 passed tests (0 failed). ✓ Analytics endpoint returns all required data structures with correct counts (34 categories, 32 cities, 1088 SEO pages). ✓ Businesses manager with full CRUD operations, filters (category, city, source, search, flag, sort), audit logging. ✓ Reviews/users admin endpoints with search, deletion, counts, CSV export. ✓ SEO settings with site config updates, robots.txt integration, per-page overrides (PUT/GET/DELETE), path normalization, case-insensitive lookup. ✓ Admin media signature (503 without Cloudinary, 401 without auth). ✓ Google Trends CSV upload with header line skipping, auto-mapping to categories, enable/disable toggle, bulk operations. ✓ Public /api/nearby pages with geolocation support, city filtering, distance sorting, view tracking. ✓ Catalog regression confirms 34 categories including new ones (pizza, bars, gas-stations), sitemap includes nearby pages. Phase 1 spot checks passed. No critical issues. All backend APIs working correctly."
+  - agent: "main"
+    message: "NEW FEATURE - AI Trip Planner (backend/trip.py). Please test /api/trip/* ONLY (do not re-test old tasks). Focus: (1) GET /api/trip/meta returns interests/transports/countries/popular_routes with slugs. (2) GET /api/trip/popular. (3) POST /api/trip/plan - test a SHORT non-stop trip (origin=Hoshiarpur,destination=Chandigarh,transport=bus,country=IN,days=1,budget=800,travelers=1,interests=[music_movies,photography,foodie]) AND a multi-day India trip (Delhi->Manali,car,days=3) AND a US trip (Los Angeles->Las Vegas,car,country=US,days=3,budget=1200). Verify: 200 OK, plan.days non-empty, each travel segment has songs[] and moments[] (CRITICAL - even non-stop), budget_breakdown present, map.waypoints geocoded, faqs present. Response time can be 30-60s (AI). (4) Caching: repeat same POST -> should return cached:true fast. (5) POST /api/trip/save requires auth (401 without session; save then GET /api/trip/saved returns it; DELETE /api/trip/saved/{id}). Create a user session per /app/auth_testing.md. (6) GET /api/trip/route/chandigarh-to-leh-ladakh returns a plan (may take ~40s first time); unknown slug -> 404. NOTE: Gemini model gemini-3.8-flash sometimes returns 503 overload; code auto-falls back to 3.7/3.6-flash so it should still succeed. Google key has Places+Geocoding enabled but NOT Directions/Routes (that's expected/handled). GEMINI + GOOGLE keys are in backend/.env. Do NOT test frontend."
+  - agent: "testing"
+    message: "AI Trip Planner API testing complete. All 47 tests passed (0 failed). Comprehensive test coverage: ✓ Metadata endpoints (GET /api/trip/meta, GET /api/trip/popular) return correct structures. ✓ Trip planning tested with 3 scenarios covering short non-stop (Hoshiarpur->Chandigarh, 1 day), multi-day India (Delhi->Manali, 3 days), and US trip (LA->Las Vegas, 3 days). All returned 200 with complete plans including days[], budget_breakdown[], faqs[], map.waypoints[] with lat/lng. ✓ CRITICAL FEATURE VERIFIED: All trip types (including non-stop) have songs[] and moments[] in travel segments - short trip had 3 songs and 7 moments, multi-day had 5 songs and 8 moments, US trip had 4 songs and 9 moments. ✓ US trip correctly uses $ symbol in budget. ✓ Caching works: repeat request returned cached:true in 0.3s. ✓ Auth-protected save flow: POST /api/trip/save without auth returns 401, with auth returns 200 {saved:true}, GET /api/trip/saved returns saved plans, DELETE /api/trip/saved/{id} works, bogus id returns 404. ✓ Route endpoints: GET /api/trip/route/chandigarh-to-leh-ladakh returns 6-day plan, invalid slug returns 404. Gemini AI integration working with fallback chain. Google Places/Geocoding enrichment functional. No critical issues. All backend APIs working correctly."

@@ -12,6 +12,8 @@ import AuthCallback from "@/pages/AuthCallback";
 import Account from "@/pages/Account";
 import ListBusiness from "@/pages/ListBusiness";
 import Admin from "@/pages/Admin";
+import TripPlanner from "@/pages/TripPlanner";
+import TripRoute from "@/pages/TripRoute";
 import NotFound from "@/pages/NotFound";
 
 // Secret console path (set in frontend/.env). `/admin` deliberately 404s.
@@ -27,6 +29,8 @@ function AppRouter() {
       <Route path="/list-your-business" element={<ListBusiness />} />
       <Route path="/nearby" element={<NearbyHub />} />
       <Route path="/nearby/:slug" element={<NearbyQuery />} />
+      <Route path="/trip-planner" element={<TripPlanner />} />
+      <Route path="/trip/:slug" element={<TripRoute />} />
       <Route path={`/${ADMIN_PATH}`} element={<Admin />} />
       <Route path="/admin" element={<NotFound />} />
       <Route path="/:category/:state/:city" element={<Listing />} />
