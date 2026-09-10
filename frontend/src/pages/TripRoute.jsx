@@ -55,7 +55,7 @@ export default function TripRoute() {
       />
       <Header />
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <nav className="text-xs text-slate-500 mb-4">
+        <nav className="text-xs text-slate-500 mb-4 print:hidden">
           <Link to="/trip-planner" className="hover:text-orange-600">Trip Planner</Link>
           <span className="mx-1.5">/</span>
           <span className="text-slate-700 font-medium capitalize">{slug?.replace(/-/g, " ")}</span>
@@ -72,8 +72,8 @@ export default function TripRoute() {
 
         {plan && !loading && (
           <>
-            <TripResult plan={plan} />
-            <div className="mt-8 rounded-2xl bg-slate-900 text-white p-6 text-center">
+            <TripResult plan={plan} shareUrl={canonical} />
+            <div className="mt-8 rounded-2xl bg-slate-900 text-white p-6 text-center print:hidden">
               <Sparkles className="w-6 h-6 text-orange-400 mx-auto" />
               <h3 className="text-xl font-bold mt-2">Want it tailored to you?</h3>
               <p className="text-slate-300 text-sm mt-1">Set your budget, days & interests and get a personalised plan.</p>

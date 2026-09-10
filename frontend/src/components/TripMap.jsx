@@ -11,9 +11,9 @@ const numIcon = (n, color) =>
     popupAnchor: [0, -13],
   });
 
-// Ordered waypoints + route polyline. No Directions API needed — draws the
-// travel line through geocoded stops in order.
-export const TripMap = ({ waypoints = [], height = 380 }) => {
+// Ordered waypoints + real road route (Google Directions polyline) when available,
+// else a dashed straight line through the geocoded stops.
+export const TripMap = ({ waypoints = [], route = null, height = 380 }) => {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
@@ -44,13 +44,18 @@ export const TripMap = ({ waypoints = [], height = 380 }) => {
         .addTo(layerRef.current)
         .bindPopup(`<strong>${m.name || ""}</strong><br/>${m.type || ""}`);
     });
-    if (pts.length > 1) {
+    const road = Array.isArray(route?.polyline) && route.polyline.length > 1 ? route.polyline : null;
+    if (road) {
+      L.polyline(road, { color: "#0f172a", weight: 7, opacity: 0.25, lineCap: "round" }).addTo(layerRef.current);
+      L.polyline(road, { color: "#ea580c", weight: 4, opacity: 0.95, lineCap: "round", lineJoin: "round" }).addTo(layerRef.current);
+      mapRef.current.fitBounds(road, { padding: [40, 40], maxZoom: 12 });
+    } else if (pts.length > 1) {
       L.polyline(pts, { color: "#ea580c", weight: 4, opacity: 0.75, dashArray: "1,8", lineCap: "round" }).addTo(layerRef.current);
       mapRef.current.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
     } else if (pts.length === 1) {
       mapRef.current.setView(pts[0], 12);
     }
-  }, [JSON.stringify(waypoints.map((m) => [m.lat, m.lng]))]);
+  }, [JSON.stringify(waypoints.map((m) => [m.lat, m.lng])), route?.polyline?.length]);
 
-  return <div ref={ref} data-testid="trip-map" style={{ height, width: "100%" }} className="rounded-xl overflow-hidden border border-slate-200 z-0" />;
+  return <div ref={ref} data-testid="trip-map" data-route={route?.polyline ? "road" : "straight"} style={{ height, width: "100%" }} className="rounded-xl overflow-hidden border border-slate-200 z-0" />;
 };

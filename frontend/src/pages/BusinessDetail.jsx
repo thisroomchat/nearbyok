@@ -5,6 +5,7 @@ import { ChevronRight, Star, MapPin, Clock, BadgeCheck, MessageCircle, Navigatio
   Share2, Phone, Globe, CheckCircle2, Send, AlertCircle } from "lucide-react";
 import { getDetail, postLead } from "@/lib/nbk";
 import { Header } from "@/components/Header";
+import { useCountry } from "@/context/CountryContext";
 import { Footer } from "@/components/Footer";
 import { Seo } from "@/components/Seo";
 import { MapView } from "@/components/MapView";
@@ -42,6 +43,7 @@ const Card = ({ title, children, testid }) => (
 
 export default function BusinessDetail() {
   const { category, state, city, slug } = useParams();
+  const { prefix, cfg } = useCountry();
   const [data, setData] = useState(null);
   const [nf, setNf] = useState(false);
   const [gallery, setGallery] = useState(0);
@@ -69,7 +71,7 @@ export default function BusinessDetail() {
   if (!data) return <div className="min-h-screen bg-slate-50"><Header /><div className="p-16 text-center text-slate-400">Loading…</div></div>;
 
   const { business: b, seo, services, hours, similar, claim } = data;
-  const canonical = `https://nearbyok.com/${category}/${state}/${city}/${slug}`;
+  const canonical = `https://nearbyok.com${prefix}/${category}/${state}/${city}/${slug}`;
   const hoursObj = Array.isArray(hours) ? null : hours;
   const media = [...(b.videos || []), ...b.images.map((u) => ({ url: u, type: "image", thumb: u }))];
 
@@ -90,14 +92,14 @@ export default function BusinessDetail() {
 
   const jsonLd = [
     { "@context": "https://schema.org", "@type": "LocalBusiness", name: b.name,
-      image: b.images, telephone: b.phone, address: { "@type": "PostalAddress", streetAddress: b.address, addressLocality: b.city_name, addressRegion: b.abbr, addressCountry: "US" },
+      image: b.images, telephone: b.phone, address: { "@type": "PostalAddress", streetAddress: b.address, addressLocality: b.city_name, addressRegion: b.abbr, addressCountry: (b.country || "us").toUpperCase() },
       geo: { "@type": "GeoCoordinates", latitude: b.lat, longitude: b.lng },
       aggregateRating: { "@type": "AggregateRating", ratingValue: b.rating, reviewCount: b.reviews_count },
       url: canonical, priceRange: "$".repeat(b.price_level) },
     { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: "https://nearbyok.com/" },
-      { "@type": "ListItem", position: 2, name: b.city_name, item: `https://nearbyok.com/${category}/${state}/${city}` },
-      { "@type": "ListItem", position: 3, name: b.category_name, item: `https://nearbyok.com/${category}/${state}/${city}` },
+      { "@type": "ListItem", position: 2, name: b.city_name, item: `https://nearbyok.com${prefix}/${category}/${state}/${city}` },
+      { "@type": "ListItem", position: 3, name: b.category_name, item: `https://nearbyok.com${prefix}/${category}/${state}/${city}` },
       { "@type": "ListItem", position: 4, name: b.name, item: canonical } ] },
     { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: seo.faqs.map((f) => ({
       "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) },
@@ -113,9 +115,9 @@ export default function BusinessDetail() {
       />
       <Header />
       <Crumb items={[
-        { label: "Home", to: "/" },
-        { label: b.city_name, to: `/${category}/${state}/${city}` },
-        { label: b.category_name, to: `/${category}/${state}/${city}` },
+        { label: "Home", to: `${prefix}/` },
+        { label: b.city_name, to: `${prefix}/${category}/${state}/${city}` },
+        { label: b.category_name, to: `${prefix}/${category}/${state}/${city}` },
         { label: b.name },
       ]} />
 
@@ -305,7 +307,7 @@ export default function BusinessDetail() {
                 {seo.categories.slice(0, 8).map((c) => {
                   const Icon = iconMap(c.icon);
                   return (
-                    <Link key={c.slug} data-testid="popular-categories-tab" to={`/${c.slug}/${state}/${city}`} className="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 transition-colors py-1">
+                    <Link key={c.slug} data-testid="popular-categories-tab" to={`${prefix}/${c.slug}/${state}/${city}`} className="flex items-center gap-2 text-sm text-slate-600 hover:text-blue-600 transition-colors py-1">
                       <Icon className="w-4 h-4 text-orange-500 shrink-0" /> {c.name}
                     </Link>
                   );
@@ -325,10 +327,10 @@ export default function BusinessDetail() {
             ))}
           </div>
         </Card>
-        <Card title={`${b.category_name} in popular US cities`}>
+        <Card title={`${b.category_name} in popular ${cfg.short} cities`}>
           <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             {seo.popular_cities.map((c) => (
-              <Link key={c.slug} data-testid="popular-cities-matrix-link" to={`/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{b.category_name} in {c.name}</Link>
+              <Link key={c.slug} data-testid="popular-cities-matrix-link" to={`${prefix}/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{b.category_name} in {c.name}</Link>
             ))}
           </div>
         </Card>

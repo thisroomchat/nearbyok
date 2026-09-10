@@ -75,7 +75,7 @@ export default function Account() {
                 {data.claims.map((c) => (
                   <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="my-claim-item">
                     <div className="flex-1 min-w-0">
-                      <Link to={`/${c.business.category}/${c.business.state}/${c.business.city}/${c.business.slug}`} className="font-bold text-slate-900 hover:text-blue-600">{c.business_name}</Link>
+                      <Link to={c.business.path} className="font-bold text-slate-900 hover:text-blue-600">{c.business_name}</Link>
                       <p className="text-xs text-slate-400">{c.business.area}, {c.business.city_name} · claimed as {c.role} · {new Date(c.created_at).toLocaleDateString()}</p>
                       {c.note && <p className="text-xs text-slate-500 mt-1">Admin note: {c.note}</p>}
                     </div>
@@ -88,7 +88,7 @@ export default function Account() {
               <div className="space-y-3">
                 {data.reviews.map((r) => (
                   <div key={r.id} className="bg-white border border-slate-200 rounded-xl p-4" data-testid="my-review-item">
-                    <Link to={`/${r.business.category}/${r.business.state}/${r.business.city}/${r.business.slug}`} className="font-bold text-slate-900 hover:text-blue-600">{r.business.name}</Link>
+                    <Link to={r.business.path} className="font-bold text-slate-900 hover:text-blue-600">{r.business.name}</Link>
                     <p className="text-xs text-slate-400">{r.business.area}, {r.business.city_name} · {new Date(r.created_at).toLocaleDateString()}</p>
                     <div className="flex items-center gap-0.5 mt-1">{[1, 2, 3, 4, 5].map((n) => <Star key={n} className={`w-3.5 h-3.5 ${n <= r.rating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />)}</div>
                     <p className="text-sm text-slate-600 mt-1">{r.text}</p>

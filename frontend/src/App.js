@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import { SiteProvider } from "@/context/SiteContext";
+import { CountryProvider } from "@/context/CountryContext";
+import { COUNTRY_CODES } from "@/lib/countries";
 import NearbyHub from "@/pages/NearbyHub";
 import NearbyQuery from "@/pages/NearbyQuery";
 import Home from "@/pages/Home";
@@ -14,27 +16,35 @@ import ListBusiness from "@/pages/ListBusiness";
 import Admin from "@/pages/Admin";
 import TripPlanner from "@/pages/TripPlanner";
 import TripRoute from "@/pages/TripRoute";
+import TripShared from "@/pages/TripShared";
 import NotFound from "@/pages/NotFound";
 
 // Secret console path (set in frontend/.env). `/admin` deliberately 404s.
 const ADMIN_PATH = (process.env.REACT_APP_ADMIN_PATH || "nbk-console").replace(/^\/+/, "");
+
+// Directory pages exist once per country scope: "" (USA) and /in, /ae, /ca, /uk, /au.
+const directoryRoutes = (prefix) => [
+  <Route key={`${prefix}-home`} path={`${prefix}/`} element={<Home />} />,
+  <Route key={`${prefix}-list`} path={`${prefix}/list-your-business`} element={<ListBusiness />} />,
+  <Route key={`${prefix}-listing`} path={`${prefix}/:category/:state/:city`} element={<Listing />} />,
+  <Route key={`${prefix}-detail`} path={`${prefix}/:category/:state/:city/:slug`} element={<BusinessDetail />} />,
+];
 
 function AppRouter() {
   const location = useLocation();
   if (location.hash?.includes("session_id=")) return <AuthCallback />;
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      {directoryRoutes("")}
+      {COUNTRY_CODES.map((cc) => directoryRoutes(`/${cc}`))}
       <Route path="/account" element={<Account />} />
-      <Route path="/list-your-business" element={<ListBusiness />} />
       <Route path="/nearby" element={<NearbyHub />} />
       <Route path="/nearby/:slug" element={<NearbyQuery />} />
       <Route path="/trip-planner" element={<TripPlanner />} />
+      <Route path="/trip/p/:id" element={<TripShared />} />
       <Route path="/trip/:slug" element={<TripRoute />} />
       <Route path={`/${ADMIN_PATH}`} element={<Admin />} />
       <Route path="/admin" element={<NotFound />} />
-      <Route path="/:category/:state/:city" element={<Listing />} />
-      <Route path="/:category/:state/:city/:slug" element={<BusinessDetail />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
@@ -44,12 +54,14 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <SiteProvider>
-          <AuthProvider>
-            <AppRouter />
-            <Toaster position="top-center" richColors />
-          </AuthProvider>
-        </SiteProvider>
+        <CountryProvider>
+          <SiteProvider>
+            <AuthProvider>
+              <AppRouter />
+              <Toaster position="top-center" richColors />
+            </AuthProvider>
+          </SiteProvider>
+        </CountryProvider>
       </BrowserRouter>
     </div>
   );

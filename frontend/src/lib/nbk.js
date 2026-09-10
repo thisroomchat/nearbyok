@@ -1,12 +1,18 @@
 import axios from "axios";
+import { ccFromPath } from "@/lib/countries";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
+
+export const getCountries = () => api.get("/countries").then((r) => r.data);
+export const getGeo = () => api.get("/geo").then((r) => r.data);
 
 export const api = axios.create({ baseURL: API, withCredentials: true });
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem("nbk_admin_token");
   if (token) config.headers["X-Admin-Token"] = token;
+  // Country scope from the URL (/in, /ae, /ca, /uk, /au) — explicit params win.
+  config.params = { country: ccFromPath(window.location.pathname), ...(config.params || {}) };
   return config;
 });
 api.interceptors.response.use((r) => r, (err) => {
@@ -110,6 +116,7 @@ export const getTripMeta = () => api.get("/trip/meta").then((r) => r.data);
 export const getTripPopular = () => api.get("/trip/popular").then((r) => r.data);
 export const postTripPlan = (body) => api.post("/trip/plan", body).then((r) => r.data);
 export const getTripRoute = (slug) => api.get(`/trip/route/${slug}`).then((r) => r.data);
+export const getTripPlanById = (id) => api.get(`/trip/plan/${id}`).then((r) => r.data);
 export const saveTrip = (id) => api.post("/trip/save", { id }).then((r) => r.data);
 export const getSavedTrips = () => api.get("/trip/saved").then((r) => r.data);
 export const deleteSavedTrip = (id) => api.delete(`/trip/saved/${id}`).then((r) => r.data);
@@ -124,10 +131,10 @@ export const getMyListings = () => api.get("/my/listings").then((r) => r.data);
 
 // admin
 export const adminStats = () => api.get("/admin/stats").then((r) => r.data);
-export const adminIngestStatus = (city) => api.get("/admin/ingest-status", { params: { city } }).then((r) => r.data);
-export const adminIngest = (category, city, pages = 1) => api.post("/admin/ingest", null, { params: { category, city, pages } }).then((r) => r.data);
-export const adminIngestCity = (city, pages = 1) => api.post("/admin/ingest-city", null, { params: { city, pages } }).then((r) => r.data);
-export const adminIngestAll = (pages = 1, skip_done = true) => api.post("/admin/ingest-all", null, { params: { pages, skip_done } }).then((r) => r.data);
+export const adminIngestStatus = (city, country = "us") => api.get("/admin/ingest-status", { params: { city, country } }).then((r) => r.data);
+export const adminIngest = (category, city, pages = 1, country = "us") => api.post("/admin/ingest", null, { params: { category, city, pages, country } }).then((r) => r.data);
+export const adminIngestCity = (city, pages = 1, country = "us") => api.post("/admin/ingest-city", null, { params: { city, pages, country } }).then((r) => r.data);
+export const adminIngestAll = (pages = 1, skip_done = true, country = "") => api.post("/admin/ingest-all", null, { params: { pages, skip_done, country } }).then((r) => r.data);
 export const adminLatestJob = () => api.get("/admin/ingest-jobs/latest").then((r) => r.data);
 export const adminCancelJob = () => api.post("/admin/ingest-all/cancel").then((r) => r.data);
 export const adminSubmissions = () => api.get("/admin/submissions").then((r) => r.data);

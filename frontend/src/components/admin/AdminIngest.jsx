@@ -4,13 +4,14 @@ import { toast } from "sonner";
 import { adminIngestStatus, adminIngest, adminIngestCity, adminIngestAll, adminLatestJob, adminCancelJob } from "@/lib/nbk";
 
 export const AdminIngest = () => {
+  const [country, setCountry] = useState("us");
   const [city, setCity] = useState("new-york");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState({});
   const [job, setJob] = useState(null);
   const [pages, setPages] = useState(1);
 
-  const load = useCallback(() => adminIngestStatus(city).then(setData), [city]);
+  const load = useCallback(() => adminIngestStatus(city, country).then((d) => { setData(d); if (d.city !== city) setCity(d.city); }), [city, country]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     adminLatestJob().then(setJob);
@@ -26,9 +27,9 @@ export const AdminIngest = () => {
   };
 
   const startAll = async () => {
-    const j = await adminIngestAll(pages, true);
+    const j = await adminIngestAll(pages, true, country);
     setJob(j);
-    toast.success(j.status === "running" ? "A job is already running" : "Started full ingestion in background");
+    toast.success(j.status === "running" ? "A job is already running" : `Started full ingestion for ${country.toUpperCase()} in background`);
   };
 
   const running = job?.status === "running" || job?.status === "queued";
@@ -41,6 +42,7 @@ export const AdminIngest = () => {
           <div>
             <h2 className="font-bold text-slate-900">Pull real businesses from Google Places</h2>
             <p className="text-xs text-slate-500 mt-0.5">Photos, reviews, exact location, phone & hours. Seed/mock data for that city+category is deleted once real data lands.</p>
+            {data?.lazy && <p data-testid="lazy-ingest-stats" className="text-xs text-orange-700 mt-1">Lazy ingest (first visitor triggers a pull): <b>{data.lazy.used_today}/{data.lazy.cap}</b> combos used today.</p>}
           </div>
           <div className="ml-auto flex items-center gap-2">
             <label className="text-xs text-slate-500">Depth
@@ -51,7 +53,7 @@ export const AdminIngest = () => {
             {running ? (
               <button data-testid="ingest-cancel-button" onClick={() => adminCancelJob().then(() => toast("Cancelling…"))} className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"><Square className="w-4 h-4" /> Cancel</button>
             ) : (
-              <button data-testid="ingest-all-button" onClick={startAll} className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"><Download className="w-4 h-4" /> Ingest ALL (remaining)</button>
+              <button data-testid="ingest-all-button" onClick={startAll} className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"><Download className="w-4 h-4" /> Ingest ALL {country.toUpperCase()} (remaining)</button>
             )}
           </div>
         </div>
@@ -69,10 +71,13 @@ export const AdminIngest = () => {
 
       <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+          <select data-testid="ingest-country-select" value={country} onChange={(e) => { setCountry(e.target.value); setCity(""); }} className="border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold">
+            {(data?.countries || [{ code: "us", flag: "", name: "United States" }]).map((c) => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
+          </select>
           <select data-testid="ingest-city-select" value={city} onChange={(e) => setCity(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold">
             {data?.cities.map((c) => <option key={c.slug} value={c.slug}>{c.name}, {c.abbr}</option>)}
           </select>
-          <button data-testid="ingest-city-button" disabled={busy.city} onClick={() => run("city", () => adminIngestCity(city, pages), (r) => `Ingested ${Object.values(r.results).filter((v) => typeof v === "number").reduce((a, b) => a + b, 0)} places for ${city}`)}
+          <button data-testid="ingest-city-button" disabled={busy.city} onClick={() => run("city", () => adminIngestCity(city, pages, country), (r) => `Ingested ${Object.values(r.results).filter((v) => typeof v === "number").reduce((a, b) => a + b, 0)} places for ${city}`)}
             className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors disabled:opacity-60">
             {busy.city ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Ingest whole city
           </button>
@@ -89,7 +94,7 @@ export const AdminIngest = () => {
                 <td className="px-2 py-2 text-right text-slate-500">{r.owner}</td>
                 <td className="px-2 py-2 text-xs text-slate-400">{r.last_ingest ? new Date(r.last_ingest).toLocaleString() : "—"}</td>
                 <td className="px-5 py-2 text-right">
-                  <button data-testid={`ingest-btn-${r.category}`} disabled={busy[r.category]} onClick={() => run(r.category, () => adminIngest(r.category, city, pages), (x) => `Pulled ${x.inserted} ${r.name.toLowerCase()} for ${city}`)}
+                  <button data-testid={`ingest-btn-${r.category}`} disabled={busy[r.category]} onClick={() => run(r.category, () => adminIngest(r.category, city, pages, country), (x) => `Pulled ${x.inserted} ${r.name.toLowerCase()} for ${city}`)}
                     className="inline-flex items-center gap-1 border border-slate-300 hover:border-slate-900 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors disabled:opacity-60">
                     {busy[r.category] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} {r.google ? "Refresh" : "Ingest"}
                   </button>

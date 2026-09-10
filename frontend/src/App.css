@@ -15,3 +15,12 @@
   background: #fed7aa;
   color: #7c2d12;
 }
+
+/* Trip plan "Download PDF" = browser print. Keep it clean & paper-friendly. */
+@media print {
+  @page { margin: 12mm; }
+  body { background: #fff !important; }
+  .leaflet-container, [data-sonner-toaster] { display: none !important; }
+  a { color: inherit; text-decoration: none; }
+  .print\:break-inside-avoid { break-inside: avoid; }
+}

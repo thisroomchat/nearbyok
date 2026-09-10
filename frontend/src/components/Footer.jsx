@@ -1,19 +1,30 @@
 import { MapPin, Facebook, Instagram, Twitter, Linkedin } from "lucide-react";
 import { Link } from "react-router-dom";
+import { COUNTRIES } from "@/lib/countries";
 
 const FEATURED = ["Browse by Cities", "Browse by Areas", "Featured Categories", "All Categories",
   "New Categories", "Top Product Categories", "Featured Companies", "All Companies With Photos", "All Companies With Reviews"];
 
 export const Footer = () => (
-  <footer className="bg-slate-900 text-slate-300 mt-16">
+  <footer className="bg-slate-900 text-slate-300 mt-16 print:hidden">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
       <div className="mb-8">
         <h3 className="text-white font-bold text-lg mb-4">Featured Links</h3>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-400">
           <Link to="/nearby" data-testid="footer-nearby-link" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5 font-semibold text-slate-300">Nearby searches</Link>
           <Link to="/list-your-business" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5">List your business</Link>
+          <Link to="/trip-planner" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5">AI Trip Planner</Link>
           {FEATURED.map((f) => (
             <a key={f} href="#" className="hover:text-orange-400 transition-colors border-r border-slate-700 pr-5 last:border-0">{f}</a>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-8" data-testid="footer-countries">
+        <h3 className="text-white font-bold text-lg mb-4">nearbyok around the world</h3>
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-400">
+          {COUNTRIES.map((c) => (
+            <Link key={c.code} to={`${c.prefix}/`} data-testid={`footer-country-${c.code}`} className="hover:text-orange-400 transition-colors flex items-center gap-1.5"><span>{c.flag}</span> {c.name}</Link>
           ))}
         </div>
       </div>
@@ -33,7 +44,7 @@ export const Footer = () => (
         </div>
       </div>
       <p className="text-xs text-slate-500 mt-8">
-        © {new Date().getFullYear()} nearbyok.com — Find local businesses, services & stores near you across US cities.
+        © {new Date().getFullYear()} nearbyok.com — Find local businesses, services & stores near you across USA, India, UAE, Canada, UK & Australia.
         Business data may be provided by Google Maps.
       </p>
     </div>

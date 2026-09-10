@@ -6,7 +6,7 @@ import { useSite } from "@/context/SiteContext";
 const overrideCache = new Map();
 
 // SEO helper: title, meta, canonical, OG/Twitter, robots + JSON-LD. Per-path admin overrides win over page defaults.
-export const Seo = ({ title, description, canonical, jsonLd, image, noindex = false }) => {
+export const Seo = ({ title, description, canonical, jsonLd, image, noindex = false, alternates }) => {
   const { pathname } = useLocation();
   const { site } = useSite();
   const [ov, setOv] = useState(() => overrideCache.get(pathname) ?? null);
@@ -50,6 +50,14 @@ export const Seo = ({ title, description, canonical, jsonLd, image, noindex = fa
     if (!link) { link = document.createElement("link"); link.setAttribute("rel", "canonical"); document.head.appendChild(link); }
     if (finalCanonical) link.setAttribute("href", finalCanonical);
 
+    // hreflang alternates (multi-country home pages)
+    document.head.querySelectorAll('link[rel="alternate"][data-nbk]').forEach((el) => el.remove());
+    (alternates || []).forEach(({ hreflang, href }) => {
+      const a = document.createElement("link");
+      a.rel = "alternate"; a.hreflang = hreflang; a.href = href; a.setAttribute("data-nbk", "1");
+      document.head.appendChild(a);
+    });
+
     const scripts = [];
     const blocks = Array.isArray(jsonLd) ? jsonLd : jsonLd ? [jsonLd] : [];
     blocks.forEach((block) => {
@@ -62,7 +70,7 @@ export const Seo = ({ title, description, canonical, jsonLd, image, noindex = fa
     });
     return () => scripts.forEach((s) => s.remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finalTitle, finalDesc, finalCanonical, finalImage, finalNoindex, jsonKey, site.name, site.keywords, ov?.keywords]);
+  }, [finalTitle, finalDesc, finalCanonical, finalImage, finalNoindex, jsonKey, site.name, site.keywords, ov?.keywords, JSON.stringify(alternates || null)]);
 
   return null;
 };

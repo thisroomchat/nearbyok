@@ -206,7 +206,7 @@ export default function TripPlanner() {
         <div id="trip-result-anchor" />
         {result && !loading && (
           <div className="mt-6">
-            <TripResult plan={result.plan} planId={result.id} onSave={onSave} saving={saving} saved={saved} />
+            <TripResult plan={result.plan} planId={result.id} onSave={onSave} saving={saving} saved={saved} shareUrl={`${window.location.origin}/trip/p/${result.id}`} />
           </div>
         )}
 

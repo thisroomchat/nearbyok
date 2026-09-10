@@ -6,6 +6,8 @@ import { getHome, doSearch } from "@/lib/nbk";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Seo } from "@/components/Seo";
+import { useCountry } from "@/context/CountryContext";
+import { COUNTRIES } from "@/lib/countries";
 
 const iconMap = (name) => Icons[name?.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("")] || Building2;
 
@@ -14,27 +16,30 @@ export default function Home() {
   const [what, setWhat] = useState("");
   const [where, setWhere] = useState("");
   const navigate = useNavigate();
+  const { cc, cfg, prefix } = useCountry();
 
-  useEffect(() => { getHome().then(setData); }, []);
+  useEffect(() => { setData(null); getHome().then(setData); }, [cc]);
 
   const submit = async (e) => {
     e.preventDefault();
     const res = await doSearch(what, where);
-    navigate(`/${res.category}/${res.state}/${res.city}`);
+    navigate(res.path || `${prefix}/${res.category}/${res.state}/${res.city}`);
   };
 
-  const quickTo = (cat) => navigate(`/${cat}/${data.cities[0].state}/${data.cities[0].slug}`);
+  const quickTo = (cat) => navigate(`${prefix}/${cat}/${data.cities[0].state}/${data.cities[0].slug}`);
+  const canonical = `https://nearbyok.com${prefix}/`;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Seo
-        title="nearbyok.com — Find Local Businesses & Services Near You in US Cities"
-        description="Discover top-rated plumbers, electricians, dentists, restaurants, coffee shops and more across US cities. Verified numbers, ratings, reviews, hours and directions."
-        canonical="https://nearbyok.com/"
+        title={`nearbyok.com — Find Local Businesses & Services Near You in ${cfg.short} Cities`}
+        description={`Discover top-rated plumbers, electricians, dentists, restaurants, coffee shops and more across ${cfg.name} cities. Verified numbers, ratings, reviews, hours and directions.`}
+        canonical={canonical}
+        alternates={[...COUNTRIES.map((c) => ({ hreflang: c.hreflang, href: `https://nearbyok.com${c.prefix}/` })), { hreflang: "x-default", href: "https://nearbyok.com/" }]}
         jsonLd={{
           "@context": "https://schema.org", "@type": "WebSite", name: "nearbyok.com",
-          url: "https://nearbyok.com/",
-          potentialAction: { "@type": "SearchAction", target: "https://nearbyok.com/search?q={query}", "query-input": "required name=query" },
+          url: canonical,
+          potentialAction: { "@type": "SearchAction", target: `https://nearbyok.com${prefix}/search?q={query}`, "query-input": "required name=query" },
         }}
       />
       <Header compact />
@@ -45,10 +50,10 @@ export default function Home() {
         <div className="absolute inset-0 bg-slate-900/70" />
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-20 sm:py-28">
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight max-w-3xl">
-            Find <span className="text-orange-500">local businesses</span> & services near you
+            Find <span className="text-orange-500">local businesses</span> & services near you{cfg.prefix ? <span className="text-slate-300"> in {cfg.short}</span> : ""}
           </h1>
-          <p className="mt-4 text-slate-300 text-base sm:text-lg max-w-xl">
-            {data ? `${data.stats.businesses.toLocaleString()} listings` : "Thousands of listings"} across {data?.stats.cities || 12}+ US cities — verified numbers, real ratings & directions.
+          <p className="mt-4 text-slate-300 text-base sm:text-lg max-w-xl" data-testid="home-hero-subtitle">
+            {data ? `${data.stats.businesses.toLocaleString()} listings` : "Thousands of listings"} across {data?.stats.cities || 20}+ {cfg.short} cities — verified numbers, real ratings & directions.
           </p>
 
           <form onSubmit={submit} className="mt-8 flex flex-col sm:flex-row bg-white rounded-xl p-2 shadow-2xl max-w-3xl gap-2">
@@ -60,7 +65,7 @@ export default function Home() {
             <div className="flex items-center flex-1 px-3">
               <MapPin className="w-5 h-5 text-slate-400 shrink-0" />
               <input data-testid="hero-search-where" value={where} onChange={(e) => setWhere(e.target.value)}
-                placeholder="City, State or Zip" className="w-full px-3 py-3 text-slate-900 placeholder:text-slate-400 outline-none" />
+                placeholder={`City or ${cfg.regionLabel}`} className="w-full px-3 py-3 text-slate-900 placeholder:text-slate-400 outline-none" />
             </div>
             <button data-testid="hero-search-submit" type="submit"
               className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-8 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
@@ -92,10 +97,10 @@ export default function Home() {
 
         {/* Cities */}
         <section className="py-4 pb-12">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-6">Explore Top US Cities</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-6">Explore Top {cfg.short} Cities</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {data?.cities.map((c) => (
-              <Link key={c.slug} data-testid={`home-city-${c.slug}`} to={`/restaurants/${c.state}/${c.slug}`}
+              <Link key={c.slug} data-testid={`home-city-${c.slug}`} to={`${prefix}/restaurants/${c.state}/${c.slug}`}
                 className="group relative rounded-xl overflow-hidden h-36 shadow-sm">
                 <img src={c.image} alt={c.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute inset-0 bg-slate-900/50 group-hover:bg-slate-900/40 transition-colors" />
@@ -118,7 +123,7 @@ export default function Home() {
                 <span className="font-semibold text-slate-800 w-32 shrink-0">{cat.name}</span>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
                   {data.cities.slice(0, 8).map((c) => (
-                    <Link key={c.slug} to={`/${cat.slug}/${c.state}/${c.slug}`}
+                    <Link key={c.slug} to={`${prefix}/${cat.slug}/${c.state}/${c.slug}`}
                       className="text-slate-500 hover:text-blue-600 transition-colors">
                       {cat.name} in {c.name}
                     </Link>
@@ -136,7 +141,7 @@ export default function Home() {
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Own a local business?</h2>
               <p className="mt-3 text-slate-300">Get listed for free in minutes — your own SEO page with call, WhatsApp and enquiry buttons. Real customers, real calls, zero commission.</p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link to="/list-your-business" data-testid="home-list-business-cta" className="bg-orange-600 hover:bg-orange-700 font-bold px-6 py-3 rounded-lg flex items-center gap-2 transition-colors">
+                <Link to={`${prefix}/list-your-business`} data-testid="home-list-business-cta" className="bg-orange-600 hover:bg-orange-700 font-bold px-6 py-3 rounded-lg flex items-center gap-2 transition-colors">
                   List Your Business Free <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>

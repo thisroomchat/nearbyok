@@ -22,8 +22,10 @@ from catalog_extra import EXTRA_CATEGORIES, EXTRA_CITIES
 from owner import build_router as build_owner_router, Media, clean_media, EDITABLE_FIELDS as OWNER_EDITABLE, get_settings
 from admin_extra import build_router as build_console_router
 from catalog_trends import TREND_CATEGORIES
+from countries import COUNTRIES, COUNTRY_CITIES, TZ_MAP, public_country
 
 GOOGLE_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+LAZY_DAILY_CAP = int(os.environ.get("LAZY_INGEST_DAILY_CAP", "40"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("nearbyok")
@@ -120,7 +122,39 @@ CITIES = [
 ]
 CITIES += EXTRA_CITIES
 CITY_BY_SLUG = {c["slug"]: c for c in CITIES}
+for _c in CITIES:
+    _c["country"] = "us"
+ALL_CITIES = CITIES + [c for lst in COUNTRY_CITIES.values() for c in lst]
+CITY_INDEX = {(c["country"], c["slug"]): c for c in ALL_CITIES}
 LIVE = {"status": {"$ne": "rejected"}}
+
+
+def get_city(country, slug):
+    return CITY_INDEX.get((country, slug))
+
+
+def cities_of(country):
+    return CITIES if country == "us" else COUNTRY_CITIES.get(country, [])
+
+
+def country_cfg(code):
+    return COUNTRIES.get(code) or COUNTRIES["us"]
+
+
+def valid_country(code):
+    if code not in COUNTRIES:
+        raise HTTPException(404, "Unknown country")
+    return code
+
+
+def biz_path(cc, category, city_slug, slug=None):
+    city = get_city(cc, city_slug) or {}
+    base = f"{country_cfg(cc)['prefix']}/{category}/{city.get('state')}/{city_slug}"
+    return f"{base}/{slug}" if slug else base
+
+
+def city_public(c):
+    return {"slug": c["slug"], "name": c["name"], "state": c["state"], "state_name": c["state_name"], "abbr": c["abbr"], "country": c["country"]}
 
 BIZ_PREFIX = ["Prime", "Elite", "All-Star", "Metro", "Reliable", "Golden", "Summit", "Liberty", "Premier", "Sunrise",
               "Pioneer", "Evergreen", "First Choice", "Blue Ribbon", "Ace", "Cornerstone", "Trusted", "Rapid", "Star", "Peak"]
@@ -143,7 +177,7 @@ def is_open_now(biz, tz_offset):
     if biz.get("is_24_7"):
         return True, "Open 24 hours"
     now = datetime.now(timezone.utc)
-    local_hour = (now.hour + tz_offset) % 24
+    local_hour = int((now.hour + now.minute / 60 + tz_offset) % 24)
     oh, ch = biz.get("open_hour", 9), biz.get("close_hour", 21)
     if oh <= local_hour < ch:
         return True, f"Open now · Closes {ch % 12 or 12} {'AM' if ch < 12 else 'PM'}"
@@ -163,13 +197,19 @@ def hours_table(biz):
 
 def format_business(doc, center_lat=None, center_lng=None):
     cat = CAT_BY_SLUG.get(doc["category"], {})
-    city = CITY_BY_SLUG.get(doc["city"], {})
+    cc = doc.get("country", "us")
+    ctry = country_cfg(cc)
+    city = get_city(cc, doc["city"]) or {}
     open_now, hours_status = is_open_now(doc, city.get("tz", -5))
     dist = None
     if center_lat is not None and doc.get("lat"):
         dist = haversine(center_lat, center_lng, doc["lat"], doc["lng"])
+        if ctry["unit"] == "km":
+            dist = round(dist * 1.609, 1)
     return {
         "id": doc["id"], "slug": doc["slug"], "name": doc["name"],
+        "country": cc, "path": f"{ctry['prefix']}/{doc['category']}/{city.get('state')}/{doc['city']}/{doc['slug']}",
+        "distance_unit": ctry["unit"], "currency_symbol": ctry["symbol"],
         "category": doc["category"], "category_name": cat.get("name"), "category_singular": cat.get("singular"),
         "icon": cat.get("icon"), "state": doc["city"] and city.get("state"), "state_name": city.get("state_name"),
         "city": doc["city"], "city_name": city.get("name"), "abbr": city.get("abbr"),
@@ -247,7 +287,9 @@ def gen_related_searches(cat, city):
 # Seeding
 # ---------------------------------------------------------------------------
 def make_business(cat, city, idx):
-    seed = int(hashlib.md5(f"{cat['slug']}-{city['slug']}-{idx}".encode()).hexdigest(), 16)
+    cc = city.get("country", "us")
+    ctry = country_cfg(cc)
+    seed = int(hashlib.md5(f"{cc}-{cat['slug']}-{city['slug']}-{idx}".encode()).hexdigest(), 16)
     rnd = random.Random(seed)
     prefix = BIZ_PREFIX[idx % len(BIZ_PREFIX)]
     base = f"{prefix} {city['name']} {cat['singular']}" if rnd.random() < 0.4 else f"{prefix} {cat['singular']} {rnd.choice(BIZ_SUFFIX)}"
@@ -263,18 +305,25 @@ def make_business(cat, city, idx):
     imgs = cat["images"][:]
     rnd.shuffle(imgs)
     street_no = rnd.randint(100, 9800)
+    if cc == "us":
+        phone = f"+1 ({rnd.randint(201,989)}) {rnd.randint(200,999)}-{rnd.randint(1000,9999)}"
+        address = f"{street_no} {area} {rnd.choice(['St','Ave','Blvd','Rd','Way'])}, {city['name']}, {city['abbr']} {rnd.randint(10000,99999)}"
+    else:
+        phone = f"{ctry['phone_cc']} {rnd.randint(20,99)} {rnd.randint(1000,9999)} {rnd.randint(1000,9999)}"
+        address = f"{street_no} {area} {rnd.choice(['Road','Street','Main Road','Avenue'])}, {city['name']}, {city['state_name']}, {ctry['short']}"
     return {
-        "id": f"{cat['slug']}-{city['slug']}-{idx}",
+        "id": f"{cat['slug']}-{city['slug']}-{idx}" if cc == "us" else f"{cc}-{cat['slug']}-{city['slug']}-{idx}",
         "place_id": None,
         "slug": slugify(f"{name}-{area}"),
         "name": name,
         "category": cat["slug"],
         "city": city["slug"],
+        "country": cc,
         "area": area,
         "rating": rating,
         "reviews_count": reviews,
-        "phone": f"+1 ({rnd.randint(201,989)}) {rnd.randint(200,999)}-{rnd.randint(1000,9999)}",
-        "address": f"{street_no} {area} {rnd.choice(['St','Ave','Blvd','Rd','Way'])}, {city['name']}, {city['abbr']} {rnd.randint(10000,99999)}",
+        "phone": phone,
+        "address": address,
         "website": f"https://www.{slugify(prefix+city['name']+cat['singular'])[:28]}.com",
         "lat": lat, "lng": lng,
         "images": imgs,
@@ -293,24 +342,28 @@ def make_business(cat, city, idx):
 async def seed_db():
     await db.businesses.create_index("id", unique=True)
     await db.businesses.create_index([("category", 1), ("city", 1)])
+    await db.businesses.create_index([("country", 1), ("category", 1), ("city", 1)])
     await db.leads.create_index("business_id")
     await db.favorites.create_index([("user_id", 1), ("business_id", 1)], unique=True)
     await db.reviews.create_index([("user_id", 1), ("business_id", 1)], unique=True)
     await db.user_sessions.create_index("session_token")
+    # migration: legacy docs are all USA
+    await db.businesses.update_many({"country": {"$exists": False}}, {"$set": {"country": "us"}})
+    await db.ingest_log.update_many({"country": {"$exists": False}}, {"$set": {"country": "us"}})
     existing = set()
-    async for row in db.businesses.aggregate([{"$group": {"_id": {"c": "$category", "ci": "$city"}}}]):
-        existing.add((row["_id"]["c"], row["_id"]["ci"]))
+    async for row in db.businesses.aggregate([{"$group": {"_id": {"c": "$category", "ci": "$city", "co": "$country"}}}]):
+        existing.add((row["_id"]["c"], row["_id"]["co"], row["_id"]["ci"]))
     docs = []
     for cat in CATEGORIES:
-        for city in CITIES:
-            if (cat["slug"], city["slug"]) in existing:
+        for city in ALL_CITIES:
+            if (cat["slug"], city["country"], city["slug"]) in existing:
                 continue
             n = random.Random(int(hashlib.md5((cat["slug"] + city["slug"]).encode()).hexdigest(), 16)).randint(6, 10)
-            for i in range(n):
+            for i in range(n if city["country"] == "us" else min(n, 7)):
                 docs.append(make_business(cat, city, i))
-    if docs:
-        await db.businesses.insert_many(docs)
-    logger.info(f"Seeded {len(docs)} new businesses; matrix {len(CATEGORIES)}x{len(CITIES)}.")
+    for i in range(0, len(docs), 5000):
+        await db.businesses.insert_many(docs[i:i + 5000])
+    logger.info(f"Seeded {len(docs)} new businesses; matrix {len(CATEGORIES)}x{len(ALL_CITIES)} across {len(COUNTRIES)} countries.")
 
 
 # ---------------------------------------------------------------------------
@@ -356,18 +409,19 @@ def map_review(rv):
             "time": rv.get("relativePublishTimeDescription", ""), "published_at": rv.get("publishTime"), "source": "google"}
 
 
-async def ingest_google(cat_slug, city_slug, pages=1):
+async def ingest_google(cat_slug, city_slug, pages=1, country="us"):
     if not GOOGLE_KEY:
         raise HTTPException(400, "GOOGLE_PLACES_API_KEY not configured")
-    cat, city = CAT_BY_SLUG.get(cat_slug), CITY_BY_SLUG.get(city_slug)
+    cat, city = CAT_BY_SLUG.get(cat_slug), get_city(country, city_slug)
     if not cat or not city:
         raise HTTPException(404, "Unknown category or city")
+    ctry = country_cfg(country)
     headers = {"X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": PLACES_MASK, "Content-Type": "application/json"}
     places, token = [], None
     async with httpx.AsyncClient(timeout=40) as c:
         for _ in range(max(1, min(pages, 3))):
-            body = {"textQuery": f"{cat['name']} in {city['name']}, {city['abbr']}", "pageSize": 20,
-                    "languageCode": "en", "regionCode": "US"}
+            body = {"textQuery": f"{cat['name']} in {city['name']}, {city['state_name']}, {ctry['name']}", "pageSize": 20,
+                    "languageCode": "en", "regionCode": ctry["google_region"]}
             if token:
                 body["pageToken"] = token
             r = await c.post("https://places.googleapis.com/v1/places:searchText", headers=headers, json=body)
@@ -395,12 +449,12 @@ async def ingest_google(cat_slug, city_slug, pages=1):
             uris = await asyncio.gather(*[fetch_photo_uri(c, ph["name"]) for ph in (p.get("photos") or [])[:PHOTO_LIMIT]])
             images = [u for u in uris if u] or cat["images"]
             slug = slugify(f"{name}-{area}") or pid.lower()
-            clash = await db.businesses.find_one({"slug": slug, "city": city_slug, "category": cat_slug, "id": {"$ne": f"g-{pid}"}}, {"_id": 0, "id": 1})
+            clash = await db.businesses.find_one({"slug": slug, "city": city_slug, "country": country, "category": cat_slug, "id": {"$ne": f"g-{pid}"}}, {"_id": 0, "id": 1})
             if clash:
                 slug = f"{slug}-{pid[-4:].lower()}"
             doc = {
                 "id": f"g-{pid}", "place_id": pid, "slug": slug, "name": name,
-                "category": cat_slug, "city": city_slug, "area": area,
+                "category": cat_slug, "city": city_slug, "country": country, "area": area,
                 "rating": p.get("rating") or 0, "reviews_count": p.get("userRatingCount") or 0,
                 "phone": p.get("internationalPhoneNumber") or p.get("nationalPhoneNumber") or "",
                 "address": p.get("formattedAddress", ""), "website": p.get("websiteUri", ""),
@@ -426,30 +480,66 @@ async def ingest_google(cat_slug, city_slug, pages=1):
             await db.businesses.update_one({"id": doc["id"]}, {"$set": doc, "$setOnInsert": {"created_at": now}}, upsert=True)
             inserted += 1
     if inserted:
-        await db.businesses.delete_many({"category": cat_slug, "city": city_slug, "source": "seed"})
-    await db.ingest_log.update_one({"category": cat_slug, "city": city_slug},
-                                   {"$set": {"count": inserted, "at": now}}, upsert=True)
+        await db.businesses.delete_many({"category": cat_slug, "city": city_slug, "country": country, "source": "seed"})
+    await db.ingest_log.update_one({"category": cat_slug, "city": city_slug, "country": country},
+                                   {"$set": {"count": inserted, "at": now, "status": "done"}}, upsert=True)
     return inserted
 
 
-async def run_ingest_all(job_id, pages, skip_done):
-    combos = [(c["slug"], ci["slug"]) for ci in CITIES for c in CATEGORIES]
+async def _lazy_ingest(cat_slug, city_slug, country):
+    try:
+        n = await ingest_google(cat_slug, city_slug, 1, country)
+        logger.info(f"lazy ingest {country}/{cat_slug}/{city_slug}: {n} places")
+    except Exception as e:
+        logger.warning(f"lazy ingest failed {country}/{cat_slug}/{city_slug}: {str(e)[:160]}")
+        await db.ingest_log.update_one({"category": cat_slug, "city": city_slug, "country": country},
+                                       {"$set": {"status": "error", "error": str(e)[:160], "at": datetime.now(timezone.utc).isoformat()}})
+
+
+async def maybe_lazy_ingest(cat_slug, city_slug, country) -> bool:
+    """First visitor of a seed-only page triggers a background Google pull (budget-capped per day)."""
+    if not GOOGLE_KEY:
+        return False
+    s = await get_settings()
+    ingest_cfg = s.get("ingest") or {}
+    if ingest_cfg.get("lazy_enabled") is False:
+        return False
+    cap = int(ingest_cfg.get("lazy_daily_cap") or LAZY_DAILY_CAP)
+    log = await db.ingest_log.find_one({"category": cat_slug, "city": city_slug, "country": country}, {"_id": 0})
+    now = datetime.now(timezone.utc)
+    if log and (log.get("count", 0) > 0 or log.get("status") == "pending"):
+        return log.get("status") == "pending"
+    if log and log.get("at") and (now - datetime.fromisoformat(log["at"])).total_seconds() < 86400:
+        return False
+    today = now.strftime("%Y-%m-%d")
+    used = await db.ingest_log.count_documents({"trigger": "lazy", "at": {"$gte": today}})
+    if used >= cap:
+        return False
+    await db.ingest_log.update_one({"category": cat_slug, "city": city_slug, "country": country},
+                                   {"$set": {"status": "pending", "trigger": "lazy", "at": now.isoformat(), "count": 0}}, upsert=True)
+    asyncio.create_task(_lazy_ingest(cat_slug, city_slug, country))
+    return True
+
+
+async def run_ingest_all(job_id, pages, skip_done, country=""):
+    cities = [c for c in ALL_CITIES if not country or c["country"] == country]
+    combos = [(c["slug"], ci["country"], ci["slug"]) for ci in cities for c in CATEGORIES]
     done_set = set()
     if skip_done:
         async for row in db.ingest_log.find({"count": {"$gt": 0}}, {"_id": 0}):
-            done_set.add((row["category"], row["city"]))
+            done_set.add((row["category"], row.get("country", "us"), row["city"]))
     todo = [x for x in combos if x not in done_set]
     await db.ingest_jobs.update_one({"id": job_id}, {"$set": {"status": "running", "total": len(todo), "done": 0, "inserted": 0, "errors": []}})
-    for cat, city in todo:
+    for cat, cc, city in todo:
         job = await db.ingest_jobs.find_one({"id": job_id}, {"_id": 0})
         if job.get("cancel"):
             await db.ingest_jobs.update_one({"id": job_id}, {"$set": {"status": "cancelled"}})
             return
         try:
-            n = await ingest_google(cat, city, pages)
-            await db.ingest_jobs.update_one({"id": job_id}, {"$inc": {"done": 1, "inserted": n}, "$set": {"current": f"{cat} / {city}"}})
+            n = await ingest_google(cat, city, pages, cc)
+            await db.ingest_jobs.update_one({"id": job_id}, {"$inc": {"done": 1, "inserted": n}, "$set": {"current": f"{cc}/{cat}/{city}"}})
         except Exception as e:
-            await db.ingest_jobs.update_one({"id": job_id}, {"$inc": {"done": 1}, "$push": {"errors": f"{cat}/{city}: {str(e)[:120]}"}})
+            await db.ingest_jobs.update_one({"id": job_id}, {"$inc": {"done": 1}, "$push": {"errors": f"{cc}/{cat}/{city}: {str(e)[:120]}"}})
         await asyncio.sleep(0.2)
     await db.ingest_jobs.update_one({"id": job_id}, {"$set": {"status": "completed", "finished_at": datetime.now(timezone.utc).isoformat()}})
 
@@ -462,20 +552,39 @@ async def root():
     return {"message": "nearbyok.com API", "status": "ok"}
 
 
+@api.get("/countries")
+async def countries_list():
+    return {"countries": [{**public_country(c), "cities": len(cities_of(c["code"]))} for c in COUNTRIES.values()],
+            "tz_map": TZ_MAP}
+
+
+@api.get("/geo")
+async def geo(request: Request):
+    """Edge/CDN country header if present (Cloudflare / Vercel / nginx); client falls back to timezone."""
+    h = request.headers
+    raw = (h.get("cf-ipcountry") or h.get("x-vercel-ip-country") or h.get("x-country-code") or "").lower()
+    code = {"gb": "uk"}.get(raw, raw)
+    return {"country": code if code in COUNTRIES else None, "source": "header" if code in COUNTRIES else None}
+
+
 @api.get("/home")
-async def home():
-    total = await db.businesses.count_documents({})
+async def home(country: str = Query("us")):
+    cc = valid_country(country)
+    cities = cities_of(cc)
+    total = await db.businesses.count_documents({"country": cc})
     return {
+        "country": public_country(country_cfg(cc)),
         "categories": [{"slug": c["slug"], "name": c["name"], "icon": c["icon"], "image": c["images"][0], "services": c["services"]} for c in CATEGORIES],
-        "cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "state_name": c["state_name"],
-                    "abbr": c["abbr"], "image": CITY_IMG[i % len(CITY_IMG)]} for i, c in enumerate(CITIES)],
-        "stats": {"businesses": total, "cities": len(CITIES), "categories": len(CATEGORIES),
-                  "pages": len(CITIES) * len(CATEGORIES)},
+        "cities": [{**city_public(c), "image": CITY_IMG[i % len(CITY_IMG)]} for i, c in enumerate(cities)],
+        "stats": {"businesses": total, "cities": len(cities), "categories": len(CATEGORIES),
+                  "pages": len(cities) * len(CATEGORIES)},
     }
 
 
 @api.get("/search")
-async def search(what: str = Query(""), where: str = Query("")):
+async def search(what: str = Query(""), where: str = Query(""), country: str = Query("us")):
+    cc = valid_country(country)
+    cities = cities_of(cc)
     w = what.lower().strip()
     l = where.lower().strip()
     cat = None
@@ -490,29 +599,38 @@ async def search(what: str = Query(""), where: str = Query("")):
                 break
     cat = cat or CAT_BY_SLUG["restaurants"]
     city = None
-    for c in CITIES:
+    for c in cities:
         if l and (c["name"].lower() in l or c["abbr"].lower() == l or c["slug"].replace("-", " ") in l):
             city = c
             break
-    city = city or CITY_BY_SLUG["new-york"]
-    return {"category": cat["slug"], "state": city["state"], "city": city["slug"],
+    city = city or cities[0]
+    return {"category": cat["slug"], "state": city["state"], "city": city["slug"], "country": cc,
+            "path": biz_path(cc, cat["slug"], city["slug"]),
             "category_name": cat["name"], "city_name": city["name"]}
 
 
 @api.get("/catalog")
-async def catalog():
-    return {"categories": [{"slug": c["slug"], "name": c["name"], "singular": c["singular"], "icon": c["icon"], "services": c["services"]} for c in CATEGORIES],
-            "cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "state_name": c["state_name"], "abbr": c["abbr"], "areas": c["areas"]} for c in CITIES]}
+async def catalog(country: str = Query("us")):
+    cc = valid_country(country)
+    return {"country": public_country(country_cfg(cc)),
+            "categories": [{"slug": c["slug"], "name": c["name"], "singular": c["singular"], "icon": c["icon"], "services": c["services"]} for c in CATEGORIES],
+            "cities": [{**city_public(c), "areas": c["areas"]} for c in cities_of(cc)]}
 
 
 @api.get("/listing/{category}/{state}/{city}")
 async def listing(category: str, state: str, city: str,
                   min_rating: float = 0, open_now: bool = False, sort: str = "recommended",
-                  lat: Optional[float] = None, lng: Optional[float] = None):
-    cat, city_cfg = CAT_BY_SLUG.get(category), CITY_BY_SLUG.get(city)
+                  lat: Optional[float] = None, lng: Optional[float] = None, country: str = Query("us")):
+    cc = valid_country(country)
+    ctry = country_cfg(cc)
+    cities = cities_of(cc)
+    cat, city_cfg = CAT_BY_SLUG.get(category), get_city(cc, city)
     if not cat or not city_cfg:
         raise HTTPException(404, "Page not found")
-    docs = await db.businesses.find({"category": category, "city": city, **LIVE}, {"_id": 0}).to_list(200)
+    docs = await db.businesses.find({"category": category, "city": city, "country": cc, **LIVE}, {"_id": 0}).to_list(200)
+    refreshing = False
+    if not any(d.get("source") == "google" for d in docs):
+        refreshing = await maybe_lazy_ingest(category, city, cc)
     center_lat = lat if lat is not None else city_cfg["lat"]
     center_lng = lng if lng is not None else city_cfg["lng"]
     items = [format_business(d, center_lat, center_lng) for d in docs]
@@ -529,12 +647,12 @@ async def listing(category: str, state: str, city: str,
     else:
         items.sort(key=lambda b: (b["sponsored"], b["rating"], b["reviews_count"]), reverse=True)
     top_rated = items[0]["name"] if items else None
-    # nearby: same category in other cities of same state
-    nearby_cities = [{"slug": c["slug"], "name": c["name"], "state": c["state"]} for c in CITIES if c["slug"] != city]
+    nearby_cities = [{"slug": c["slug"], "name": c["name"], "state": c["state"]} for c in cities if c["slug"] != city]
     return {
         "meta": {"category": category, "category_name": cat["name"], "category_singular": cat["singular"],
                  "state": state, "state_name": city_cfg["state_name"], "city": city, "city_name": city_cfg["name"],
-                 "abbr": city_cfg["abbr"], "icon": cat["icon"], "hero_image": CITY_IMG[0]},
+                 "abbr": city_cfg["abbr"], "icon": cat["icon"], "hero_image": CITY_IMG[0],
+                 "country": public_country(ctry), "prefix": ctry["prefix"], "refreshing": refreshing},
         "center": {"lat": city_cfg["lat"], "lng": city_cfg["lng"]},
         "count": len(items),
         "businesses": items,
@@ -544,7 +662,7 @@ async def listing(category: str, state: str, city: str,
             "searched_for": gen_searched_for(cat, city_cfg),
             "related_searches": gen_related_searches(cat, city_cfg),
             "nearby_areas": [{"area": a, "category": category, "city": city, "state": state} for a in city_cfg["areas"]],
-            "popular_cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "category": category} for c in CITIES],
+            "popular_cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "category": category} for c in cities],
             "similar_categories": [{"slug": c["slug"], "name": c["name"]} for c in CATEGORIES if c["slug"] != category][:10],
             "nearby_cities": nearby_cities,
         },
@@ -552,18 +670,20 @@ async def listing(category: str, state: str, city: str,
 
 
 @api.get("/detail/{category}/{state}/{city}/{slug}")
-async def detail(category: str, state: str, city: str, slug: str, user: Optional[User] = Depends(optional_user)):
-    cat, city_cfg = CAT_BY_SLUG.get(category), CITY_BY_SLUG.get(city)
+async def detail(category: str, state: str, city: str, slug: str, user: Optional[User] = Depends(optional_user), country: str = Query("us")):
+    cc = valid_country(country)
+    ctry = country_cfg(cc)
+    cat, city_cfg = CAT_BY_SLUG.get(category), get_city(cc, city)
     if not cat or not city_cfg:
         raise HTTPException(404, "Page not found")
-    doc = await db.businesses.find_one({"category": category, "city": city, "slug": slug, **LIVE}, {"_id": 0})
+    doc = await db.businesses.find_one({"category": category, "city": city, "country": cc, "slug": slug, **LIVE}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Business not found")
     biz = format_business(doc, city_cfg["lat"], city_cfg["lng"])
     biz["saved"] = bool(user and await db.favorites.find_one({"user_id": user.user_id, "business_id": doc["id"]}))
     user_reviews = await db.reviews.find({"business_id": doc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     similar_docs = await db.businesses.find(
-        {"category": category, "city": city, "slug": {"$ne": slug}, **LIVE}, {"_id": 0}).to_list(50)
+        {"category": category, "city": city, "country": cc, "slug": {"$ne": slug}, **LIVE}, {"_id": 0}).to_list(50)
     similar = [format_business(d, city_cfg["lat"], city_cfg["lng"]) for d in similar_docs]
     similar.sort(key=lambda b: (b["rating"], b["reviews_count"]), reverse=True)
     all_for_faq = [biz] + similar
@@ -580,6 +700,7 @@ async def detail(category: str, state: str, city: str, slug: str, user: Optional
     return {
         "business": biz,
         "claim": claim,
+        "prefix": ctry["prefix"], "country": public_country(ctry),
         "hours": doc.get("weekday_descriptions") or hours_table(doc),
         "services": doc.get("services") or cat["services"],
         "seo": {
@@ -599,7 +720,7 @@ async def detail(category: str, state: str, city: str, slug: str, user: Optional
             "searched_for": gen_searched_for(cat, city_cfg),
             "related_searches": gen_related_searches(cat, city_cfg),
             "nearby_areas": [{"area": a, "category": category, "city": city, "state": state} for a in city_cfg["areas"]],
-            "popular_cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "category": category} for c in CITIES],
+            "popular_cities": [{"slug": c["slug"], "name": c["name"], "state": c["state"], "category": category} for c in cities_of(cc)],
             "categories": [{"slug": c["slug"], "name": c["name"], "icon": c["icon"]} for c in CATEGORIES],
         },
         "similar": similar[:8],
@@ -635,7 +756,7 @@ async def create_lead(lead: LeadIn):
 
 # ------ User features: favorites & reviews ------
 def with_state(b):
-    b["state"] = CITY_BY_SLUG.get(b["city"], {}).get("state")
+    b["state"] = (get_city(b.get("country", "us"), b["city"]) or {}).get("state")
     return b
 
 
@@ -720,21 +841,22 @@ async def geocode(address):
 
 
 @api.post("/businesses/submit")
-async def submit_business(body: SubmitIn, user: User = Depends(get_current_user)):
-    cat, city = CAT_BY_SLUG.get(body.category), CITY_BY_SLUG.get(body.city)
+async def submit_business(body: SubmitIn, user: User = Depends(get_current_user), country: str = Query("us")):
+    cc = valid_country(country)
+    cat, city = CAT_BY_SLUG.get(body.category), get_city(cc, body.city)
     if not cat or not city:
         raise HTTPException(400, "Unknown category or city")
-    lat, lng = await geocode(f"{body.address}, {city['name']}, {city['abbr']}")
+    lat, lng = await geocode(f"{body.address}, {city['name']}, {city['state_name']}, {country_cfg(cc)['name']}")
     rnd = random.Random(body.name + body.address)
     slug = slugify(f"{body.name}-{body.area}") or uuid.uuid4().hex[:8]
-    if await db.businesses.find_one({"slug": slug, "city": body.city, "category": body.category}, {"_id": 0, "id": 1}):
+    if await db.businesses.find_one({"slug": slug, "city": body.city, "country": cc, "category": body.category}, {"_id": 0, "id": 1}):
         slug = f"{slug}-{uuid.uuid4().hex[:4]}"
     now = datetime.now(timezone.utc).isoformat()
     owner_media = clean_media(body.media, 20)
     owner_imgs = [m["url"] for m in owner_media if m["type"] == "image"]
     doc = {
         "id": f"o-{uuid.uuid4().hex[:12]}", "place_id": None, "slug": slug, "name": body.name.strip(),
-        "category": body.category, "city": body.city, "area": body.area.strip(),
+        "category": body.category, "city": body.city, "country": cc, "area": body.area.strip(),
         "rating": 0, "reviews_count": 0, "phone": body.phone.strip(), "address": body.address.strip(),
         "website": body.website.strip(), "lat": lat or round(city["lat"] + rnd.uniform(-0.03, 0.03), 5),
         "lng": lng or round(city["lng"] + rnd.uniform(-0.03, 0.03), 5),
@@ -748,7 +870,8 @@ async def submit_business(body: SubmitIn, user: User = Depends(get_current_user)
         "created_at": now,
     }
     await db.businesses.insert_one(dict(doc))
-    return {"id": doc["id"], "slug": slug, "category": body.category, "state": city["state"], "city": body.city, "status": "pending"}
+    return {"id": doc["id"], "slug": slug, "category": body.category, "state": city["state"], "city": body.city, "country": cc,
+            "path": biz_path(cc, body.category, body.city, slug), "status": "pending"}
 
 
 @api.get("/my/listings")
@@ -794,49 +917,55 @@ async def admin_stats():
 
 
 @api.get("/admin/ingest-status", dependencies=[Depends(require_admin)])
-async def ingest_status(city: str):
-    if city not in CITY_BY_SLUG:
+async def ingest_status(city: str = "", country: str = "us"):
+    cc = valid_country(country)
+    city = city or cities_of(cc)[0]["slug"]
+    if not get_city(cc, city):
         raise HTTPException(404, "Unknown city")
     counts = {}
-    async for r in db.businesses.aggregate([{"$match": {"city": city}}, {"$group": {"_id": {"c": "$category", "s": "$source"}, "n": {"$sum": 1}}}]):
+    async for r in db.businesses.aggregate([{"$match": {"city": city, "country": cc}}, {"$group": {"_id": {"c": "$category", "s": "$source"}, "n": {"$sum": 1}}}]):
         counts.setdefault(r["_id"]["c"], {})[r["_id"]["s"]] = r["n"]
-    logs = {r["category"]: r async for r in db.ingest_log.find({"city": city}, {"_id": 0})}
+    logs = {r["category"]: r async for r in db.ingest_log.find({"city": city, "country": cc}, {"_id": 0})}
     rows = [{"category": c["slug"], "name": c["name"], "google": counts.get(c["slug"], {}).get("google", 0),
              "seed": counts.get(c["slug"], {}).get("seed", 0), "owner": counts.get(c["slug"], {}).get("owner", 0),
-             "last_ingest": logs.get(c["slug"], {}).get("at")} for c in CATEGORIES]
-    return {"city": city, "rows": rows,
-            "cities": [{"slug": c["slug"], "name": c["name"], "abbr": c["abbr"]} for c in CITIES]}
+             "last_ingest": logs.get(c["slug"], {}).get("at"), "trigger": logs.get(c["slug"], {}).get("trigger")} for c in CATEGORIES]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return {"city": city, "country": cc, "rows": rows,
+            "cities": [{"slug": c["slug"], "name": c["name"], "abbr": c["abbr"]} for c in cities_of(cc)],
+            "countries": [public_country(c) for c in COUNTRIES.values()],
+            "lazy": {"used_today": await db.ingest_log.count_documents({"trigger": "lazy", "at": {"$gte": today}}), "cap": LAZY_DAILY_CAP}}
 
 
 @api.post("/admin/ingest", dependencies=[Depends(require_admin)])
-async def admin_ingest(category: str, city: str, pages: int = 1):
-    inserted = await ingest_google(category, city, pages)
-    return {"inserted": inserted, "category": category, "city": city}
+async def admin_ingest(category: str, city: str, pages: int = 1, country: str = "us"):
+    inserted = await ingest_google(category, city, pages, valid_country(country))
+    return {"inserted": inserted, "category": category, "city": city, "country": country}
 
 
 @api.post("/admin/ingest-city", dependencies=[Depends(require_admin)])
-async def admin_ingest_city(city: str, pages: int = 1):
-    if city not in CITY_BY_SLUG:
+async def admin_ingest_city(city: str, pages: int = 1, country: str = "us"):
+    cc = valid_country(country)
+    if not get_city(cc, city):
         raise HTTPException(404, "Unknown city")
     results = {}
     for c in CATEGORIES:
         try:
-            results[c["slug"]] = await ingest_google(c["slug"], city, pages)
+            results[c["slug"]] = await ingest_google(c["slug"], city, pages, cc)
         except Exception as e:
             results[c["slug"]] = f"error: {str(e)[:80]}"
-    return {"city": city, "results": results}
+    return {"city": city, "country": cc, "results": results}
 
 
 @api.post("/admin/ingest-all", dependencies=[Depends(require_admin)])
-async def admin_ingest_all(pages: int = 1, skip_done: bool = True):
+async def admin_ingest_all(pages: int = 1, skip_done: bool = True, country: str = ""):
     running = await db.ingest_jobs.find_one({"status": "running"}, {"_id": 0})
     if running:
         return running
-    job = {"id": f"job-{uuid.uuid4().hex[:8]}", "status": "queued", "pages": pages, "skip_done": skip_done,
+    job = {"id": f"job-{uuid.uuid4().hex[:8]}", "status": "queued", "pages": pages, "skip_done": skip_done, "country": country or "all",
            "total": 0, "done": 0, "inserted": 0, "errors": [], "cancel": False,
            "started_at": datetime.now(timezone.utc).isoformat()}
     await db.ingest_jobs.insert_one(dict(job))
-    asyncio.create_task(run_ingest_all(job["id"], pages, skip_done))
+    asyncio.create_task(run_ingest_all(job["id"], pages, skip_done, country))
     return job
 
 
@@ -881,15 +1010,14 @@ async def list_leads(limit: int = 200):
 @app.get("/api/sitemap.xml")
 async def sitemap():
     base = "https://nearbyok.com"
-    urls = [f"{base}/"]
+    urls = [f"{base}{c['prefix']}/" for c in COUNTRIES.values()]
     for cat in CATEGORIES:
-        for city in CITIES:
-            urls.append(f"{base}/{cat['slug']}/{city['state']}/{city['slug']}")
-    docs = await db.businesses.find(LIVE, {"_id": 0, "category": 1, "city": 1, "slug": 1}).to_list(50000)
+        for city in ALL_CITIES:
+            urls.append(f"{base}{biz_path(city['country'], cat['slug'], city['slug'])}")
+    docs = await db.businesses.find(LIVE, {"_id": 0, "category": 1, "city": 1, "slug": 1, "country": 1}).to_list(80000)
     for d in docs:
-        c = CITY_BY_SLUG.get(d["city"])
-        if c:
-            urls.append(f"{base}/{d['category']}/{c['state']}/{d['city']}/{d['slug']}")
+        if get_city(d.get("country", "us"), d["city"]):
+            urls.append(f"{base}{biz_path(d.get('country', 'us'), d['category'], d['city'], d['slug'])}")
     trends = await db.trend_queries.find({"enabled": True, "category": {"$ne": None}}, {"_id": 0, "slug": 1}).to_list(2000)
     if trends:
         urls.append(f"{base}/nearby")

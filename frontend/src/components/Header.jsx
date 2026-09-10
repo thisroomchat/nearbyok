@@ -3,6 +3,8 @@ import { useNavigate, Link } from "react-router-dom";
 import { Search, MapPin, Menu, PlusCircle, X, Bookmark, Building2, LogOut, LogIn, Star, Navigation, Map } from "lucide-react";
 import { doSearch } from "@/lib/nbk";
 import { useAuth } from "@/context/AuthContext";
+import { useCountry } from "@/context/CountryContext";
+import { CountrySwitcher, GeoBanner } from "@/components/CountrySwitcher";
 
 const UserMenu = () => {
   const { user, login, logout } = useAuth();
@@ -35,22 +37,24 @@ export const Header = ({ compact = false }) => {
   const [where, setWhere] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const { p, cfg } = useCountry();
 
   const submit = async (e) => {
     e.preventDefault();
     const res = await doSearch(what, where);
-    navigate(`/${res.category}/${res.state}/${res.city}`);
+    navigate(res.path || `/${res.category}/${res.state}/${res.city}`);
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-slate-900 text-white border-b border-slate-800 shadow-lg">
+    <header className="sticky top-0 z-50 bg-slate-900 text-white border-b border-slate-800 shadow-lg print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center gap-4 h-16">
-          <a href="/" data-testid="brand-logo" className="flex items-center gap-1.5 shrink-0 group">
+          <a href={p("/")} data-testid="brand-logo" className="flex items-center gap-1.5 shrink-0 group">
             <MapPin className="w-6 h-6 text-orange-500 group-hover:scale-110 transition-transform" strokeWidth={2.5} />
             <span className="font-extrabold text-lg tracking-tight">
               nearby<span className="text-orange-500">ok</span>
             </span>
+            {cfg.prefix && <span data-testid="brand-country-tag" className="ml-1 text-[10px] font-bold uppercase tracking-wider bg-orange-600/20 text-orange-300 border border-orange-500/40 rounded px-1.5 py-0.5">{cfg.short}</span>}
           </a>
 
           {!compact && (
@@ -71,7 +75,7 @@ export const Header = ({ compact = false }) => {
                   data-testid="global-search-input-where"
                   value={where}
                   onChange={(e) => setWhere(e.target.value)}
-                  placeholder="City, State or Zip"
+                  placeholder={`City, ${cfg.regionLabel} or area`}
                   className="w-full px-2 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none"
                 />
               </div>
@@ -89,12 +93,13 @@ export const Header = ({ compact = false }) => {
             <Link to="/nearby" data-testid="header-nearby-link" className="hidden lg:flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-2 py-2 transition-colors"><Navigation className="w-4 h-4 text-orange-500" /> Nearby</Link>
             <Link to="/trip-planner" data-testid="header-trip-link" className="hidden lg:flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-2 py-2 transition-colors"><Map className="w-4 h-4 text-orange-500" /> Trip Planner</Link>
             <Link
-              to="/list-your-business"
+              to={p("/list-your-business")}
               data-testid="free-listing-cta"
               className="hidden sm:flex items-center gap-1.5 text-sm font-semibold bg-white/10 hover:bg-white/20 px-3.5 py-2 rounded-lg transition-colors"
             >
               <PlusCircle className="w-4 h-4" /> Free Listing
             </Link>
+            <CountrySwitcher />
             <UserMenu />
             <button
               data-testid="mobile-menu-toggle"
@@ -114,16 +119,18 @@ export const Header = ({ compact = false }) => {
             </div>
             <div className="flex items-center bg-white rounded-lg px-3">
               <MapPin className="w-4 h-4 text-slate-400" />
-              <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="City, State or Zip" className="w-full px-2 py-2.5 text-sm text-slate-900 outline-none" />
+              <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder={`City or ${cfg.regionLabel}`} className="w-full px-2 py-2.5 text-sm text-slate-900 outline-none" />
             </div>
             <button type="submit" className="w-full bg-orange-600 py-2.5 rounded-lg font-semibold text-sm">Search</button>
             <div className="flex gap-2 pt-1">
               <Link to="/nearby" onClick={() => setMobileOpen(false)} className="flex-1 text-center bg-white/10 py-2.5 rounded-lg font-semibold text-sm">Nearby</Link>
               <Link to="/trip-planner" onClick={() => setMobileOpen(false)} data-testid="mobile-trip-link" className="flex-1 text-center bg-white/10 py-2.5 rounded-lg font-semibold text-sm">Trip Planner</Link>
+              <Link to={p("/list-your-business")} onClick={() => setMobileOpen(false)} className="flex-1 text-center bg-white/10 py-2.5 rounded-lg font-semibold text-sm">Free Listing</Link>
             </div>
           </form>
         )}
       </div>
+      <GeoBanner />
     </header>
   );
 };

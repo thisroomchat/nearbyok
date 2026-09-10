@@ -76,7 +76,7 @@ export default function ListBusiness() {
             <h2 className="text-2xl font-extrabold text-slate-900 mt-4">Your business is live!</h2>
             <p className="text-sm text-slate-500 mt-2">It's already visible to customers with an "Unverified" tag. Our team verifies new listings within 24–48 hours, after which you get the blue Verified badge.</p>
             <div className="flex flex-wrap gap-3 justify-center mt-6">
-              <Link data-testid="listing-success-view-link" to={`/${done.category}/${done.state}/${done.city}/${done.slug}`} className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 py-3 rounded-lg transition-colors">View my page</Link>
+              <Link data-testid="listing-success-view-link" to={done.path} className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 py-3 rounded-lg transition-colors">View my page</Link>
               <Link to="/account?tab=listings" className="border border-slate-300 hover:border-slate-900 font-semibold px-6 py-3 rounded-lg transition-colors">My Listings</Link>
             </div>
           </div>

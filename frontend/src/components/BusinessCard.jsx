@@ -6,7 +6,7 @@ import { postLead } from "@/lib/nbk";
 const ratingColor = (r) => (r >= 4.5 ? "bg-green-700" : r >= 4.0 ? "bg-green-600" : r >= 3.5 ? "bg-lime-600" : "bg-amber-600");
 
 export const BusinessCard = ({ b, state, onHover }) => {
-  const to = `/${b.category}/${state}/${b.city}/${b.slug}`;
+  const to = b.path || `/${b.category}/${state}/${b.city}/${b.slug}`;
 
   const whatsapp = async (e) => {
     e.preventDefault();
@@ -54,7 +54,7 @@ export const BusinessCard = ({ b, state, onHover }) => {
             {b.rating} <Star className="w-3 h-3 fill-white" />
           </span>
           <span className="text-slate-500 text-xs">{b.reviews_count} Ratings</span>
-          {b.distance != null && <span className="text-slate-400 text-xs">· {b.distance} mi away</span>}
+          {b.distance != null && <span className="text-slate-400 text-xs">· {b.distance} {b.distance_unit || "mi"} away</span>}
         </div>
 
         <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1 truncate">

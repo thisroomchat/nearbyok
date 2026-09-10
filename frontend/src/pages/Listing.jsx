@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { Seo } from "@/components/Seo";
 import { BusinessCard } from "@/components/BusinessCard";
 import { MapView } from "@/components/MapView";
+import { useCountry } from "@/context/CountryContext";
 
 const Crumb = ({ items }) => (
   <nav className="py-3 px-4 sm:px-6 bg-slate-100 text-xs text-slate-600 border-b border-slate-200 overflow-x-auto whitespace-nowrap">
@@ -30,6 +31,7 @@ const SeoLinks = ({ title, children, testid }) => (
 
 export default function Listing() {
   const { category, state, city } = useParams();
+  const { prefix, cfg } = useCountry();
   const [sp, setSp] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,12 @@ export default function Listing() {
   }, [category, state, city, minRating, openNow, sort]);
 
   useEffect(() => { load(); window.scrollTo(0, 0); }, [load]);
+  // lazy Google ingest kicked off in background -> pull fresh data once it lands
+  useEffect(() => {
+    if (!data?.meta?.refreshing) return;
+    const t = setTimeout(load, 12000);
+    return () => clearTimeout(t);
+  }, [data?.meta?.refreshing, load]);
 
   const setParam = (k, v) => {
     const next = new URLSearchParams(sp);
@@ -60,12 +68,12 @@ export default function Listing() {
   if (!data) return <div className="min-h-screen bg-slate-50"><Header /><div className="p-10 text-center text-slate-500">Page not found.</div></div>;
 
   const { meta, businesses, seo, count } = data;
-  const canonical = `https://nearbyok.com/${category}/${state}/${city}`;
+  const canonical = `https://nearbyok.com${prefix}/${category}/${state}/${city}`;
 
   const jsonLd = [
     { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://nearbyok.com/" },
-      { "@type": "ListItem", position: 2, name: meta.state_name, item: `https://nearbyok.com/${category}/${state}` },
+      { "@type": "ListItem", position: 1, name: "Home", item: `https://nearbyok.com${prefix}/` },
+      { "@type": "ListItem", position: 2, name: meta.state_name, item: `https://nearbyok.com${prefix}/${category}/${state}` },
       { "@type": "ListItem", position: 3, name: meta.city_name, item: canonical },
       { "@type": "ListItem", position: 4, name: meta.category_name, item: canonical },
     ]},
@@ -85,7 +93,7 @@ export default function Listing() {
       />
       <Header />
       <Crumb items={[
-        { label: "Home", to: "/" },
+        { label: "Home", to: `${prefix}/` },
         { label: meta.state_name },
         { label: meta.city_name },
         { label: meta.category_name },
@@ -97,7 +105,9 @@ export default function Listing() {
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             {meta.category_name} in {meta.city_name}, {meta.abbr}
           </h1>
-          <p className="text-slate-500 text-sm mt-1">{count} {meta.category_name.toLowerCase()} found · sorted by {sort}</p>
+          <p className="text-slate-500 text-sm mt-1">{count} {meta.category_name.toLowerCase()} found · sorted by {sort}
+            {meta.refreshing && <span data-testid="listing-refreshing-badge" className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 rounded-full px-2 py-0.5"><span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" /> Fetching live Google listings…</span>}
+          </p>
         </div>
       </div>
 
@@ -178,19 +188,19 @@ export default function Listing() {
 
           <SeoLinks title={`${meta.category_name} in nearby cities`}>
             {seo.nearby_cities.map((c) => (
-              <Link key={c.slug} to={`/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{meta.category_name} in {c.name}</Link>
+              <Link key={c.slug} to={`${prefix}/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{meta.category_name} in {c.name}</Link>
             ))}
           </SeoLinks>
 
-          <SeoLinks title={`${meta.category_name} in popular US cities`} testid="popular-cities-list">
+          <SeoLinks title={`${meta.category_name} in popular ${cfg.short} cities`} testid="popular-cities-list">
             {seo.popular_cities.map((c) => (
-              <Link key={c.slug} data-testid="popular-cities-matrix-link" to={`/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{meta.category_name} in {c.name}</Link>
+              <Link key={c.slug} data-testid="popular-cities-matrix-link" to={`${prefix}/${category}/${c.state}/${c.slug}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{meta.category_name} in {c.name}</Link>
             ))}
           </SeoLinks>
 
           <SeoLinks title="Explore other categories">
             {seo.similar_categories.map((c) => (
-              <Link key={c.slug} to={`/${c.slug}/${state}/${city}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{c.name} in {meta.city_name}</Link>
+              <Link key={c.slug} to={`${prefix}/${c.slug}/${state}/${city}`} className="text-slate-500 hover:text-blue-600 transition-colors border-r border-slate-200 pr-4 last:border-0">{c.name} in {meta.city_name}</Link>
             ))}
           </SeoLinks>
         </div>

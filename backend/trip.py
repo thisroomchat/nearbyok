@@ -293,6 +293,83 @@ async def _geocode(client: httpx.AsyncClient, address: str):
     return lat, lng
 
 
+# ------------------------------------------------------------------ google directions (real road route)
+TRANSPORT_MODE = {"car": "driving", "motorcycle": "driving", "bus": "driving", "train": "transit", "walking": "walking"}
+
+
+def _decode_polyline(s: str):
+    pts, idx, lat, lng = [], 0, 0, 0
+    while idx < len(s):
+        for is_lat in (True, False):
+            shift = result = 0
+            while True:
+                b = ord(s[idx]) - 63
+                idx += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            d = ~(result >> 1) if result & 1 else result >> 1
+            if is_lat:
+                lat += d
+            else:
+                lng += d
+        pts.append([round(lat / 1e5, 5), round(lng / 1e5, 5)])
+    if len(pts) > 1500:
+        step = len(pts) / 1500
+        pts = [pts[int(i * step)] for i in range(1500)] + [pts[-1]]
+    return pts
+
+
+def _fmt_dur(sec: int) -> str:
+    h, m = divmod(int(sec) // 60, 60)
+    return f"{h} hr {m} min" if h else f"{m} min"
+
+
+async def _directions(client: httpx.AsyncClient, origin: str, destination: str, stops: list, transport: str, country: str, stop_names: list = None):
+    mode = TRANSPORT_MODE.get(transport)
+    if not mode or not GOOGLE_KEY:
+        return None
+    units = "imperial" if country in ("US", "GB") else "metric"
+    key = hashlib.md5(json.dumps([origin, destination, stops, mode, units]).encode()).hexdigest()
+    cached = await db.trip_dir_cache.find_one({"k": key}, {"_id": 0, "data": 1})
+    if cached:
+        return cached["data"]
+    data = None
+    for m in ([mode, "driving"] if mode == "transit" else [mode]):
+        params = {"origin": origin, "destination": destination, "mode": m, "units": units, "key": GOOGLE_KEY}
+        if stops and m != "transit":
+            params["waypoints"] = "optimize:true|" + "|".join(stops[:8])
+        try:
+            r = await client.get("https://maps.googleapis.com/maps/api/directions/json", params=params)
+            j = r.json()
+        except Exception as e:
+            logger.warning(f"directions failed: {e}")
+            continue
+        if j.get("status") != "OK" or not j.get("routes"):
+            logger.info(f"directions {m} status {j.get('status')}: {str(j.get('error_message', ''))[:120]}")
+            continue
+        route = j["routes"][0]
+        legs = route["legs"]
+        order = route.get("waypoint_order") or []
+        names = [origin] + ([stop_names[i] for i in order if i < len(stop_names)] if stop_names and m != "transit" else []) + [destination]
+        for i, l in enumerate(legs):
+            l["_from"] = names[i] if i < len(names) - 1 else l["start_address"]
+            l["_to"] = names[i + 1] if i + 1 < len(names) else l["end_address"]
+        dist_m = sum(l["distance"]["value"] for l in legs)
+        dur_s = sum(l["duration"]["value"] for l in legs)
+        dist_text = f"{round(dist_m / 1609.34)} mi" if units == "imperial" else f"{round(dist_m / 1000)} km"
+        data = {"mode": m, "polyline": _decode_polyline(route["overview_polyline"]["points"]),
+                "distance_m": dist_m, "duration_s": dur_s, "distance_text": dist_text, "duration_text": _fmt_dur(dur_s),
+                "summary": route.get("summary", ""),
+                "legs": [{"from": l["_from"], "to": l["_to"], "distance_text": l["distance"]["text"],
+                          "duration_text": l["duration"]["text"]} for l in legs]}
+        break
+    if data:
+        await db.trip_dir_cache.update_one({"k": key}, {"$set": {"k": key, "data": data}}, upsert=True)
+    return data
+
+
 async def _place_lookup(client: httpx.AsyncClient, query: str):
     """Return one real place {name, rating, address, maps_url} via Places Text Search (New)."""
     cached = await db.trip_place_cache.find_one({"q": query}, {"_id": 0, "data": 1})
@@ -325,8 +402,8 @@ async def _place_lookup(client: httpx.AsyncClient, query: str):
     return data
 
 
-async def _enrich(plan: dict, destination: str):
-    """Add map waypoints (geocoded) + real place info for meal/stop items."""
+async def _enrich(plan: dict, destination: str, transport: str = "car", country: str = "IN"):
+    """Add map waypoints (geocoded), real road route (Directions API) + real place info for meal/stop items."""
     async with httpx.AsyncClient(timeout=20) as client:
         # collect unique locations in order
         seen, ordered = set(), []
@@ -350,6 +427,16 @@ async def _enrich(plan: dict, destination: str):
                 waypoints.append({"name": label, "lat": lat, "lng": lng, "type": typ})
         plan["map"] = {"waypoints": waypoints,
                        "center": (waypoints[len(waypoints)//2] if waypoints else None)}
+
+        # real road route through the main stops (ordered by Google)
+        stop_types = {"stop", "explore", "checkin", "lunch", "activity"}
+        stop_wps = [w for w in waypoints if w["type"] in stop_types][:8]
+        route = await _directions(client, plan.get("origin") or "", destination, [f"{w['lat']},{w['lng']}" for w in stop_wps],
+                                  transport, country, [w["name"] for w in stop_wps])
+        if route:
+            plan["route"] = route
+            plan["distance_text"] = route["distance_text"]
+            plan["drive_time_text"] = route["duration_text"]
 
         # enrich meal/stop items with a real place (limit to control latency/quota)
         food_types = {"breakfast", "lunch", "dinner", "snack", "stop", "checkin", "explore"}
@@ -389,16 +476,34 @@ async def trip_popular():
     return {"routes": [{**r, "slug": route_slug(r["origin"], r["destination"])} for r in POPULAR_ROUTES]}
 
 
+async def _ensure_route(coll, query: dict, plan: dict, destination: str, transport: str, country: str):
+    """Backfill real road route on plans generated before Directions was enabled."""
+    if plan.get("route") or not plan.get("map"):
+        return plan
+    async with httpx.AsyncClient(timeout=20) as client:
+        wps = plan["map"].get("waypoints") or []
+        stop_wps = [w for w in wps if w.get("type") in {"stop", "explore", "checkin", "lunch", "activity"}][:8]
+        route = await _directions(client, plan.get("origin") or "", destination, [f"{w['lat']},{w['lng']}" for w in stop_wps],
+                                  transport, country, [w.get("name", "") for w in stop_wps])
+    if route:
+        plan["route"] = route
+        plan["distance_text"] = route["distance_text"]
+        plan["drive_time_text"] = route["duration_text"]
+        await coll.update_one(query, {"$set": {"plan": plan}})
+    return plan
+
+
 @router.post("/plan")
 async def trip_plan(req: PlanRequest, user: Optional[User] = Depends(optional_user)):
     key = _plan_key(req)
     cached = await db.trip_plans.find_one({"key": key}, {"_id": 0})
     if cached and cached.get("plan"):
         await db.trip_plans.update_one({"key": key}, {"$inc": {"hits": 1}})
-        return {"cached": True, "id": cached["id"], "slug": cached.get("slug"), "plan": cached["plan"]}
+        plan = await _ensure_route(db.trip_plans, {"key": key}, cached["plan"], req.destination, req.transport, req.country)
+        return {"cached": True, "id": cached["id"], "slug": cached.get("slug"), "plan": plan}
 
     plan = await _generate(req)
-    plan = await _enrich(plan, req.destination)
+    plan = await _enrich(plan, req.destination, req.transport, req.country)
 
     import uuid
     doc = {
@@ -411,6 +516,18 @@ async def trip_plan(req: PlanRequest, user: Optional[User] = Depends(optional_us
     return {"cached": False, "id": doc["id"], "slug": doc["slug"], "plan": plan}
 
 
+@router.get("/plan/{plan_id}")
+async def trip_plan_get(plan_id: str):
+    """Public shareable plan page (/trip/p/{id})."""
+    doc = await db.trip_plans.find_one({"id": plan_id}, {"_id": 0})
+    if not doc or not doc.get("plan"):
+        raise HTTPException(404, "Plan not found")
+    r = doc.get("request") or {}
+    plan = await _ensure_route(db.trip_plans, {"id": plan_id}, doc["plan"], r.get("destination", ""), r.get("transport", "car"), r.get("country", "IN"))
+    await db.trip_plans.update_one({"id": plan_id}, {"$inc": {"shares": 1}})
+    return {"id": plan_id, "slug": doc.get("slug"), "request": r, "plan": plan, "created_at": doc.get("created_at")}
+
+
 @router.get("/route/{slug}")
 async def trip_route(slug: str):
     """SEO canonical route page. Uses/creates a default plan for the popular route."""
@@ -419,12 +536,13 @@ async def trip_route(slug: str):
         raise HTTPException(404, "Unknown route")
     existing = await db.trip_routes.find_one({"slug": slug}, {"_id": 0})
     if existing and existing.get("plan"):
-        return {"slug": slug, "route": match, "plan": existing["plan"]}
+        plan = await _ensure_route(db.trip_routes, {"slug": slug}, existing["plan"], match["destination"], match["transport"], match["country"])
+        return {"slug": slug, "route": match, "plan": plan}
     req = PlanRequest(origin=match["origin"], destination=match["destination"],
                       transport=match["transport"], country=match["country"], days=match["days"],
                       travelers=2, interests=["nature", "foodie", "photography"], pace="balanced")
     plan = await _generate(req)
-    plan = await _enrich(plan, req.destination)
+    plan = await _enrich(plan, req.destination, req.transport, req.country)
     await db.trip_routes.update_one({"slug": slug}, {"$set": {
         "slug": slug, "route": match, "plan": plan, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
     return {"slug": slug, "route": match, "plan": plan}

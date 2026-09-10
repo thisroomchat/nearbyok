@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { TripMap } from "@/components/TripMap";
+import { TripShareBar } from "@/components/TripShareBar";
 import {
   MapPin, Clock, Wallet, CalendarDays, Route, Music2, Film, Camera, Video,
-  Radio, Eye, Star, Bookmark, BookmarkCheck, Coffee, UtensilsCrossed, Bus,
+  Radio, Eye, Star, Bookmark, BookmarkCheck, Coffee, UtensilsCrossed, Bus, Car,
   Sparkles, Backpack, Lightbulb, ChevronDown,
 } from "lucide-react";
 
@@ -20,7 +21,7 @@ const MOMENT_COLOR = {
 };
 
 const Chip = ({ icon: Icon, children }) => (
-  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1 text-xs font-semibold text-white">
+  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1 text-xs font-semibold text-white print:bg-slate-100 print:text-slate-800">
     <Icon className="w-3.5 h-3.5" /> {children}
   </span>
 );
@@ -138,44 +139,62 @@ const Faq = ({ q, a }) => {
   );
 };
 
-export const TripResult = ({ plan, planId, onSave, saving, saved }) => {
+export const TripResult = ({ plan, planId, onSave, saving, saved, shareUrl }) => {
   const [activeDay, setActiveDay] = useState(0);
   if (!plan) return null;
   const days = plan.days || [];
-  const day = days[activeDay] || days[0];
   const waypoints = plan.map?.waypoints || [];
+  const route = plan.route;
 
   return (
-    <div className="space-y-5" data-testid="trip-result">
+    <div className="space-y-5 print:space-y-3" data-testid="trip-result">
       {/* hero */}
-      <div className="rounded-2xl bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 p-6 text-white shadow-lg">
+      <div className="rounded-2xl bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 p-6 text-white shadow-lg print:bg-none print:text-slate-900 print:border print:border-slate-300 print:shadow-none">
         <h2 className="text-2xl font-extrabold tracking-tight">{plan.title}</h2>
-        {plan.summary && <p className="text-sm text-white/90 mt-1.5 max-w-3xl leading-relaxed">{plan.summary}</p>}
+        {plan.summary && <p className="text-sm text-white/90 mt-1.5 max-w-3xl leading-relaxed print:text-slate-700">{plan.summary}</p>}
         <div className="flex flex-wrap gap-2 mt-4">
-          {plan.distance_text && <Chip icon={Route}>{plan.distance_text}</Chip>}
+          {plan.distance_text && <Chip icon={Route}>{plan.distance_text}{route ? " by road" : ""}</Chip>}
+          {plan.drive_time_text && <Chip icon={Car}>{plan.drive_time_text} {route?.mode === "transit" ? "transit" : "drive"}</Chip>}
           {plan.duration_text && <Chip icon={Clock}>{plan.duration_text}</Chip>}
           {plan.total_budget && <Chip icon={Wallet}>{plan.total_budget}</Chip>}
           {plan.best_time_to_visit && <Chip icon={CalendarDays}>{plan.best_time_to_visit}</Chip>}
         </div>
-        {planId && onSave && (
-          <button onClick={onSave} disabled={saving || saved} data-testid="save-trip-btn"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white text-orange-600 font-bold text-sm px-4 py-2 hover:bg-orange-50 disabled:opacity-60">
-            {saved ? <><BookmarkCheck className="w-4 h-4" /> Saved</> : <><Bookmark className="w-4 h-4" /> {saving ? "Saving…" : "Save this plan"}</>}
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 mt-4 print:hidden">
+          {planId && onSave && (
+            <button onClick={onSave} disabled={saving || saved} data-testid="save-trip-btn"
+              className="inline-flex items-center gap-2 rounded-lg bg-white text-orange-600 font-bold text-sm px-4 py-2 hover:bg-orange-50 disabled:opacity-60">
+              {saved ? <><BookmarkCheck className="w-4 h-4" /> Saved</> : <><Bookmark className="w-4 h-4" /> {saving ? "Saving…" : "Save this plan"}</>}
+            </button>
+          )}
+          <TripShareBar shareUrl={shareUrl} title={plan.title} />
+        </div>
+        {shareUrl && <p className="hidden print:block text-xs text-slate-500 mt-3">Live plan: {shareUrl}</p>}
       </div>
 
-      {/* map */}
+      {/* map + route legs */}
       {waypoints.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4">
-          <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><Route className="w-4 h-4 text-orange-500" /> Route & Stops</h3>
-          <TripMap waypoints={waypoints} />
+          <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><Route className="w-4 h-4 text-orange-500" /> Route & Stops
+            {route && <span data-testid="route-road-badge" className="ml-auto text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">Real road route · {route.distance_text} · {route.duration_text}</span>}
+          </h3>
+          <div className="print:hidden"><TripMap waypoints={waypoints} route={route} /></div>
+          {route?.legs?.length > 1 && (
+            <ol data-testid="route-legs" className="mt-3 grid sm:grid-cols-2 gap-1.5 text-xs text-slate-600">
+              {route.legs.map((l, i) => (
+                <li key={i} className="flex gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="font-bold text-orange-600 shrink-0">{i + 1}.</span>
+                  <span className="truncate">{l.from.split(",")[0]} → {l.to.split(",")[0]}</span>
+                  <span className="ml-auto shrink-0 text-slate-500">{l.distance_text} · {l.duration_text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
 
       {/* day tabs */}
       {days.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="day-tabs">
+        <div className="flex gap-2 overflow-x-auto pb-1 print:hidden" data-testid="day-tabs">
           {days.map((d, i) => (
             <button key={i} onClick={() => setActiveDay(i)}
               className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold border transition-colors ${i === activeDay ? "bg-orange-500 text-white border-orange-500" : "bg-white text-slate-600 border-slate-200 hover:border-orange-300"}`}>
@@ -185,17 +204,17 @@ export const TripResult = ({ plan, planId, onSave, saving, saved }) => {
         </div>
       )}
 
-      {/* timeline */}
-      {day && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-          <h3 className="text-lg font-bold text-slate-900">Day {day.day || activeDay + 1}: {day.title}</h3>
-          {day.summary && <p className="text-sm text-slate-500 mt-1 mb-4">{day.summary}</p>}
+      {/* timeline — screen shows active day; print shows every day */}
+      {days.map((d, i) => (
+        <div key={i} className={`bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 print:break-inside-avoid ${i === activeDay ? "" : "hidden print:block"}`}>
+          <h3 className="text-lg font-bold text-slate-900">Day {d.day || i + 1}: {d.title}</h3>
+          {d.summary && <p className="text-sm text-slate-500 mt-1 mb-4">{d.summary}</p>}
           <div className="relative">
             <div className="absolute left-[13px] top-2 bottom-2 w-0.5 bg-orange-100" />
-            {(day.items || []).map((it, i) => <Item key={i} it={it} />)}
+            {(d.items || []).map((it, j) => <Item key={j} it={it} />)}
           </div>
         </div>
-      )}
+      ))}
 
       {/* budget */}
       {plan.budget_breakdown?.length > 0 && (
