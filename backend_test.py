@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 
 # Configuration
-BASE_URL = "https://e8c0cc48-f3c1-4531-ac8b-2898ff0f2ab3.preview.emergentagent.com"
+BASE_URL = "https://destination-plan-hub.preview.emergentagent.com"
 API_URL = f"{BASE_URL}/api"
 ADMIN_USERNAME = "nbkadmin"
 ADMIN_PASSWORD = "ou4c^77kFnJ4ZW7%"
